@@ -36,7 +36,7 @@ This could be generalized somehow so that one function could deal with both of t
 function continuation(
         fam::FeaturizingFindAndMatch,
         prange, pidx, ics;
-        samples_per_parameter = 100, show_progress = true,
+        samples_per_parameter = 100, show_progress = true, keep_track_maximum=true,
     )
     progress = ProgressMeter.Progress(length(prange);
         desc="Continuating basins fractions:", enabled=show_progress
@@ -54,13 +54,14 @@ function continuation(
     # At each parmaeter `p`, a dictionary mapping attractor ID to fraction is created.
     fractions_curves = [fs]
     # Furthermore some info about the attractors is stored and returned
-    prev_attractors = deepcopy(mapper.attractors)
+    prev_attractors = deepcopy(extract_attractors(mapper))
     get_info = attractors -> Dict(
         k => fam.info_extraction(att) for (k, att) in attractors
     )
     info = get_info(prev_attractors)
     attractors_info = [info]
     ProgressMeter.next!(progress; showvalues = [("previous parameter", prange[1]),])
+    alltime_maximum_key = maximum(keys(fs))
     # Continue loop over all remaining parameters
     for p in prange[2:end]
         set_parameter!(mapper.ds, pidx, p)
@@ -69,22 +70,29 @@ function continuation(
         # Collect ics from previous attractors to pass as additional ics to basins fractions (seeding)
         # to ensure that the clustering will identify them as clusters, we need to guarantee that there
         # are at least `min_neighbors` entries
+        num_additional_ics = typeof(mapper.group_config) <: GroupViaClustering ? 5*mapper.group_config.min_neighbors : 5
         additional_ics = Dataset(vcat(map(att-> 
-            fam.seeds_from_attractor(att, fam.mapper.group_config.min_neighbors),
+            fam.seeds_from_attractor(att, num_additional_ics),
             values(prev_attractors))...)) #dataset with ics seeded from previous attractors
         
         # Now perform basin fractions estimation as normal, utilizing found attractors
         fs, _ = basins_fractions(mapper, ics;
             show_progress = false, N = samples_per_parameter, additional_ics
         )
-        current_attractors = mapper.attractors
+        current_attractors = extract_attractors(mapper)
+
         if !isempty(current_attractors) && !isempty(prev_attractors)
             # If there are any attractors,
             # match with previous attractors before storing anything!
             rmap = match_attractor_ids!(
-                current_attractors, prev_attractors; distance, threshold
+                current_attractors, prev_attractors; distance, threshold, maximum_key=alltime_maximum_key
             )
             swap_dict_keys!(fs, rmap)
+            
+            if keep_track_maximum
+                current_maximum_key = maximum(keys(fs))
+                alltime_maximum_key = current_maximum_key > alltime_maximum_key ? current_maximum_key : alltime_maximum_key 
+            end
         end
         # Then do the remaining setup for storing and next step
         push!(fractions_curves, fs)

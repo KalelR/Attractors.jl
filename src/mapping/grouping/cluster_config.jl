@@ -134,7 +134,7 @@ end
 # `GroupingAcrossParametersContinuation` and is not part of public API!
 function group_features(
         features, config::GroupViaClustering;
-        par_weight::Real = 0, plength::Int = 1, spp::Int = 1,
+        kwargs...
     )
     nfeats = length(features); dimfeats = length(features[1])
     if dimfeats ≥ nfeats
@@ -147,13 +147,12 @@ function group_features(
         features = _rescale_to_01(features)
     end
     ϵ_optimal = _extract_ϵ_optimal(features, config)
-    distances = _distance_matrix(features, config; par_weight, plength, spp)
-    labels = _cluster_distances_into_labels(distances, ϵ_optimal, config.min_neighbors)
+    labels = cluster_features_into_labels(features, config, ϵ_optimal; kwargs...)
     return labels
 end
 
-function _distance_matrix(features, config::GroupViaClustering;
-        par_weight::Real = 0, plength::Int = 1, spp::Int = 1
+function _distance_matrix(features, config;
+        par_weight::Real = 0, plength::Int = 1, spp::Int = 1, threaded=false
     )
     metric = config.clust_distance_metric
     L = length(features)
@@ -163,9 +162,11 @@ function _distance_matrix(features, config::GroupViaClustering;
     else
         dists = zeros(L, L)
     end
-    if metric isa Metric # then the `pairwise` function is valid
+    if metric isa Metric && threaded == false # then the `pairwise` function is valid
+        @info "not parallel"
         pairwise!(metric, dists, features; symmetric = true)
     else # it is any arbitrary distance function, e.g., used in aggregating attractors
+        @info "parallel"
         @inbounds for i in eachindex(features)
             Threads.@threads for j in i:length(features)
                 dists[i, j] = metric(features[i], features[j])
@@ -215,10 +216,52 @@ function _extract_ϵ_optimal(features, config::GroupViaClustering)
     return ϵ_optimal
 end
 
-# Already expecting the distance matrix, the output of `pairwise`
-function _cluster_distances_into_labels(distances, ϵ_optimal, min_neighbors)
-    dbscanresult = dbscan(distances, ϵ_optimal; min_neighbors, metric=nothing)
+function cluster_features_into_labels(features, args...; kwargs...)
+    if length(features) < 200
+        @info "Number of features is $(length(features)), so going to cluster them using the *small* method."
+        return _cluster_features_into_labels(features, args...; kwargs...)
+    else
+        @info "Number of features is $(length(features)), so going to cluster them using the *large* method."
+        return _cluster_features_into_labels_large(features, args...; kwargs...)
+    end
+end
+
+
+function _cluster_features_into_labels(features, config, ϵ_optimal; par_weight::Real = 0, plength::Int = 1, spp::Int = 1)
+    if par_weight == 0.0 && plength == 1 && spp == 1  #default, no need fo rmatrix, more memory-efficient
+        # @info "Clustering by using features matrix"
+        features_mat = reduce(hcat, features)
+        dbscanresult = dbscan(features_mat, ϵ_optimal; min_neighbors=config.min_neighbors, metric=Euclidean())
+    else #use pairwise dist matrix
+        distances = _distance_matrix(features, config; par_weight, plength, spp)
+        dbscanresult = dbscan(distances, ϵ_optimal; min_neighbors=config.min_neighbors, metric=nothing)
+    end
     cluster_labels = cluster_assignment(dbscanresult)
+
+    return cluster_labels
+end
+    
+function _cluster_features_into_labels_large(features, config, ϵ_optimal; par_weight::Real = 0, plength::Int = 1, spp::Int = 1)
+    ufeats = unique(map(feature->round.(feature, sigdigits=2), features))
+    if length(ufeats) == 1 return ones(Int64, length(features)) end
+    # @show length(ufeats)
+    distances = Attractors._distance_matrix(ufeats, config; par_weight, plength, spp)
+    # @show config.min_neighbors
+    dbscanresult = Attractors.dbscan(distances, ϵ_optimal; min_neighbors=1, metric=nothing) #min_neighbors fixed at 1 here, because ideally we are already getting the unique features
+    cluster_labels_reduced = Attractors.cluster_assignment(dbscanresult)
+    # @show cluster_labels_reduced
+    ulabels = unique(cluster_labels_reduced)
+    # @show ulabels
+    idxs_ulabels = map(ulab->findfirst(lab->lab==ulab, cluster_labels_reduced), ulabels)
+    # @show idxs_ulabels
+    templates = ufeats[idxs_ulabels]
+    # @show templates
+    
+    templates_mat = reduce(hcat, templates)
+    kdtree = Attractors.KDTree(templates_mat) #each pt is a column in the mat
+    features_mat = reduce(hcat, features)
+    cluster_labels, dists = Attractors.knn(kdtree, features_mat, 1)
+    cluster_labels = [lab[1] for lab in cluster_labels]
     return cluster_labels
 end
 

@@ -69,13 +69,13 @@ end
 Return a dictionary mapping keys in `a₊` to new keys in `a₋`,
 as explained in [`match_attractor_ids!`](@ref).
 """
-function replacement_map(a₊::Dict, a₋::Dict; distance = Centroid(), threshold = Inf)
+function replacement_map(a₊::Dict, a₋::Dict; distance = Centroid(), threshold = Inf, maximum_key=1)
     distances = setsofsets_distances(a₊, a₋, distance)
     keys₊, keys₋ = keys.((a₊, a₋))
-    replacement_map(keys₊, keys₋, distances::Dict, threshold)
+    replacement_map(keys₊, keys₋, distances::Dict, threshold, maximum_key)
 end
 
-function replacement_map(keys₊, keys₋, distances::Dict, threshold)
+function replacement_map(keys₊, keys₋, distances::Dict, threshold, maximum_key::Int)
     # Transform distances to sortable collection. Sorting by distance
     # ensures we prioritize the closest matches
     sorted_keys_with_distances = Tuple{Int, Int, Float64}[]
@@ -92,7 +92,7 @@ function replacement_map(keys₊, keys₋, distances::Dict, threshold)
     # but also ensure that keys that have too high of a value distance are guaranteeed
     # to have different keys, and ensure that there is unique mapping happening!
     rmap = Dict{eltype(keys₊), eltype(keys₋)}()
-    next_id = max(maximum(keys₊), maximum(keys₋)) + 1
+    next_id = max(maximum(keys₊), maximum(keys₋), maximum_key) + 1
     done_keys₊ = eltype(keys₊)[] # stores keys of a₊ already processed
     used_keys₋ = eltype(keys₋)[] # stores keys of a₋ already used
     for (oldkey, newkey, dist) in sorted_keys_with_distances

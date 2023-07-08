@@ -52,5 +52,6 @@ function feature_to_group(feature, group_config::GroupingConfig)
 end
 
 include("cluster_config.jl")
+include("compare_config.jl")
 include("histogram_config.jl")
 include("nearest_feature_config.jl")

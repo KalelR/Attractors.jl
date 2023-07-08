@@ -96,27 +96,37 @@ function Base.show(io::IO, mapper::AttractorsViaFeaturizing)
 end
 
 ValidICS = Union{AbstractStateSpaceSet, Function}
-
 #####################################################################################
 # Extension of `AttractorMapper` API
 #####################################################################################
 # We only extend the general `basins_fractions`, because the clustering method
 # cannot map individual initial conditions to attractors
 # additional_ics is for internal use in the findandmatch continuation
-function basins_fractions(mapper::AttractorsViaFeaturizing, ics::ValidICS;
+function basins_fractions(mapper::AttractorsViaFeaturizing, og_ics::ValidICS;
         show_progress = true, N = 1000, additional_ics::Union{ValidICS, Nothing} = nothing,
     )
+    
+    ics = 
+        if isnothing(additional_ics) || typeof(og_ics) <: Function
+            og_ics
+        else
+            Dataset(vcat(Matrix(og_ics), Matrix(additional_ics)))
+        end
+    
     features = extract_features(mapper, ics; show_progress, N)
-    
-    if !isnothing(additional_ics)
-        additional_features = extract_features(mapper, additional_ics; show_progress, N)
-        features = vcat(features, additional_features)
-    end
-    
+    # @show features
+    # @info "Finished features"
+    GC.gc()
+    # @info "Finished features, now going to clustering"
+    ufeats = unique(map(feature->round.(feature, sigdigits=2), features))
+    @show ufeats
     group_labels = group_features(features, mapper.group_config)
+    # @info "Finished clustering"
     fs = basins_fractions(group_labels) # Vanilla fractions method with Array input
     
     if typeof(ics) <: AbstractStateSpaceSet
+    # @info "Extracting atts"
+    fs = basins_fractions(group_labels) # Vanilla fractions method with Array input
         attractors = extract_attractors(mapper, group_labels, ics)
         overwrite_dict!(mapper.attractors, attractors)
         return fs, group_labels
@@ -175,8 +185,12 @@ function extract_features_threaded(mapper, ics; show_progress = true, N = 1000)
         ds = systems[Threads.threadid()]
         ic = _get_ic(ics, i)
         feature_vector[i] = extract_feature(ds, ic, mapper)
+        # A = rand(Float64, (500, 15000))
+        # feature_vector[i] = rand(Float64, 4)
         ProgressMeter.next!(progress)
+        # GC.gc()
     end
+        # GC.gc()
     return feature_vector
 end
 
@@ -185,10 +199,27 @@ function extract_feature(ds::DynamicalSystem, u0::AbstractVector{<:Real}, mapper
     return mapper.featurizer(A, t)
 end
 
+# function extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics)
+#     uidxs = unique(i -> labels[i], eachindex(labels))
+#     @show uidxs, labels, ics
+#     return Dict(labels[i] => trajectory(mapper.ds, mapper.total, ics[i];
+#     Ttr = mapper.Ttr, Δt = mapper.Δt)[1] for i in uidxs if i ≠ -1)
+# end
+
 function extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics)
     uidxs = unique(i -> labels[i], eachindex(labels))
-    return Dict(labels[i] => trajectory(mapper.ds, mapper.total, ics[i];
-    Ttr = mapper.Ttr, Δt = mapper.Δt)[1] for i in uidxs if i ≠ -1)
+    # @show uidxs, labels, ics
+    filter!(x->x!=-1, uidxs)
+    atts = Dict{Int64, StateSpaceSet}()
+    for i in uidxs 
+       label = labels[i] 
+    #    @show label
+       ic = ics[i]
+    #    @show ic
+       tr, ts = trajectory(mapper.ds, mapper.total, ics[i]; Ttr = mapper.Ttr, Δt = mapper.Δt)
+       atts[label] = tr 
+    end 
+    return atts
 end
 
 extract_attractors(mapper::AttractorsViaFeaturizing) = mapper.attractors

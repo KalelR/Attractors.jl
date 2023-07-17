@@ -48,6 +48,7 @@ function _cluster_features_into_labels_comparing(features, config, distance_thre
             push!(cluster_labels, next_cluster_label)
             feature_label = next_cluster_label
             next_cluster_label += 1
+            @show min_dist
         else #smaller => assign to closest cluster 
             idx_closest_cluster = collect(keys(dist_to_clusters))[idx_min_dist]
             feature_label = idx_closest_cluster

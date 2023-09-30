@@ -8,6 +8,8 @@ module Attractors
 end Attractors
 
 using Reexport
+
+
 @reexport using StateSpaceSets
 @reexport using DynamicalSystemsBase
 
@@ -17,5 +19,11 @@ include("mapping/attractor_mapping.jl")
 include("basins/basins.jl")
 include("continuation/basins_fractions_continuation_api.jl")
 include("deprecated.jl")
+include("tipping/tipping.jl")
+
+# Visualization (export names extended in the extension package)
+include("plotting.jl")
+
+# minimal fatal shock algo
 
 end # module Attractors

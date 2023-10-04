@@ -42,9 +42,8 @@ using Random
             force_non_adaptive = stop_at_Δt,
         )
 
-        sampler, = Attractors.statespace_sampler(Random.MersenneTwister(1);
-            min_bounds = [-0.5, 0], max_bounds = [0.5, 1])
-        ics = StateSpaceSet([sampler() for i in 1:1000])
+        sampler, = statespace_sampler(HRectangle([-0.5, 0], [0.5, 1]), 155)
+        ics = StateSpaceSet([copy(sampler()) for i in 1:1000])
 
         fs, labels = basins_fractions(mapper, ics; show_progress=false)
         num_att = length(fs)
@@ -67,16 +66,15 @@ end
 
 @testset "Compatibility sparse and nonsparse" begin
     function test_compatibility_sparse_nonsparse(ds, grid; kwargs...)
-        sampler, = statespace_sampler(Random.MersenneTwister(1234);
-            min_bounds = minimum.(grid), max_bounds = maximum.(grid)
-        )
-            ics = StateSpaceSet([sampler() for i in 1:1000])
+            sampler, = statespace_sampler(grid, 1244)
+            ics = StateSpaceSet([copy(sampler()) for i in 1:1000])
 
             mapper = AttractorsViaRecurrences(ds, grid; sparse=true, show_progress = false, kwargs...)
-            fs_sparse, approx_atts_sparse, labels_sparse = basins_fractions(mapper, ics; show_progress = false)
-
+            fs_sparse, labels_sparse = basins_fractions(mapper, ics; show_progress = false)
+            approx_atts_sparse = extract_attractors(mapper)
             mapper = AttractorsViaRecurrences(ds, grid; sparse=false, show_progress = false, kwargs...)
-            fs_non, approx_atts_non, labels_non = basins_fractions(mapper, ics; show_progress = false)
+            fs_non, labels_non = basins_fractions(mapper, ics; show_progress = false)
+            approx_atts_non = extract_attractors(mapper)
 
             @test fs_sparse == fs_non
             @test labels_sparse == labels_non
@@ -92,4 +90,37 @@ end
     end
 end
 
+@testset "Escape to -1 test" begin
+# This is for testing if the chk safety keyword is working
+# as intended. The output should be only -1.
+
+function dissipative_standard_map_rule(u, p, n)
+    x, y = u
+    ν, f₀ = p
+    s = x + y
+    xn = mod2pi(s)
+    yn = (1 - ν)*y + f₀*(sin(s))
+    return SVector(xn, yn)
+end
+
+p0 = (ν = 0.02, f0 = 4.0)
+u0 = [0.1, 0.1]
+ds = DeterministicIteratedMap(dissipative_standard_map_rule, u0, p0)
+density = 10
+xg = range(0, 2π; length = density+1)[1:end-1]
+ymax = 2
+yg = range(-ymax, ymax; length = density)
+grid = (xg, yg)
+
+mapper_kwargs = (
+    mx_chk_safety = 10,
+    sparse = false, # we want to compute full basins
+)
+
+mapper = AttractorsViaRecurrences(ds, grid; mapper_kwargs...)
+basins, attractors = basins_of_attraction(mapper)
+ids = sort!(unique(basins))
+@test ids... == -1
+
+end
 end # extensive tests clause

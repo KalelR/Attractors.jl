@@ -1,6 +1,6 @@
 # Examples for Attractors.jl
 
-Note that the examples utilize some convenience plotting functions offered by Attractors.jl. In Julia 1.9+ these come into scope when using `Makie` (or any of its backends such as `CairoMakie`). In older versions of Julia, you need to find them and run them manually in the `src/plotting.jl` file.
+Note that the examples utilize some convenience plotting functions offered by Attractors.jl which come into scope when using `Makie` (or any of its backends such as `CairoMakie`), see the [visualization utilities](@ref) for more.
 
 ## Newton's fractal (basins of 2D map)
 ```@example MAIN
@@ -30,22 +30,23 @@ attractors
 Now let's plot this as a heatmap, and on top of the heatmap, let's scatter plot the attractors. We do this in one step by utilizing one of the pre-defined plotting functions offered by Attractors.jl
 
 ```@example MAIN
+using CairoMakie
+xg = yg = range(-1.5, 1.5; length = 400)
 grid = (xg, yg)
-Main.heatmap_basins_attractors(grid, basins, attractors)
+fig = heatmap_basins_attractors(grid, basins, attractors)
 ```
 
 Instead of computing the full basins, we could get only the fractions of the basins of attractions using [`basins_fractions`](@ref), which is typically the more useful thing to do in a high dimensional system.
 In such cases it is also typically more useful to define a sampler that generates initial conditions on the fly instead of pre-defining some initial conditions (as is done in [`basins_of_attraction`](@ref). This is simple to do:
 
 ```@example MAIN
+
 grid = (xg, yg)
 mapper = AttractorsViaRecurrences(ds, grid;
     sparse = false, mx_chk_lost = 1000
 )
 
-sampler, = statespace_sampler(;
-    min_bounds = minimum.(grid), max_bounds = maximum.(grid)
-)
+sampler, = statespace_sampler(grid)
 
 basins = basins_fractions(mapper, sampler)
 ```
@@ -55,6 +56,29 @@ in this case, to also get the attractors we simply extract them from the underly
 attractors = extract_attractors(mapper)
 ```
 
+
+## Minimal Fatal Shock
+Finding Minimal Fatal Shock for some point `u0` on example of Newton's fractal attractors
+```@example MAIN
+attractors = extract_attractors(mapper)
+shocks = Dict()
+algo_bb = Attractors.MFSBlackBoxOptim()
+for atr in values(attractors)
+    u0 = vec(atr)[1]
+    shocks[u0] = minimal_fatal_shock(mapper, u0, (-1.5,1.5), algo_bb)
+
+end
+shocks
+```
+To visualize results we can make use of previously defined heatmap
+```@example MAIN
+ax =  content(fig[1,1])
+for (atr, shock) in shocks
+    lines!(ax, [atr[1], atr[1] + shock]; color = :orange)
+end
+fig
+```
+
 ## Fractality of 2D basins of the (4D) magnetic pendulum
 In this section we will calculate the basins of attraction of the four-dimensional magnetic pendulum. We know that the attractors of this system are all individual fixed points on the (x, y) plane so we will only compute the basins there. We can also use this opportunity to highlight a different method, the [`AttractorsViaProximity`](@ref) which works when we already know where the attractors are. Furthermore we will also use a `ProjectedDynamicalSystem` to project the 4D system onto a 2D plane, saving a lot of computational time!
 
@@ -62,7 +86,7 @@ In this section we will calculate the basins of attraction of the four-dimension
 
 First we need to load in the magnetic pendulum from the predefined dynamical systems library
 ```@example MAIN
-using Attractors
+using Attractors, CairoMakie
 using PredefinedDynamicalSystems
 ds = PredefinedDynamicalSystems.magnetic_pendulum(d=0.2, α=0.2, ω=0.8, N=3)
 ```
@@ -88,7 +112,7 @@ xg = yg = range(-4, 4; length = 201)
 grid = (xg, yg)
 basins, = basins_of_attraction(mapper, grid; show_progress = false)
 
-Main.heatmap_basins_attractors(grid, basins, attractors)
+heatmap_basins_attractors(grid, basins, attractors)
 ```
 
 ### Computing the uncertainty exponent
@@ -116,12 +140,12 @@ basins_after, attractors_after = basins_of_attraction(
     mapper, (xg, yg); show_progress = false
 )
 # matching attractors is important!
-rmap = match_attractor_ids!(attractors_after, attractors)
+rmap = match_statespacesets!(attractors_after, attractors)
 # Don't forget to update the labels of the basins as well!
 replace!(basins_after, rmap...)
 
 # now plot
-Main.heatmap_basins_attractors(grid, basins_after, attractors_after)
+heatmap_basins_attractors(grid, basins_after, attractors_after)
 ```
 
 And let's compute the tipping "probabilities":
@@ -215,6 +239,163 @@ record(fig, "cyclical_attractors.mp4", 1:length(a)) do i
 end
 ```
 
+## Basins of attraction of a Poincaré map
+
+[`PoincareMap`](@ref) is just another discrete time dynamical system within the DynamicalSystems.jl ecosystem. With respect to Attractors.jl functionality, there is nothing special about Poincaré maps. You simply initialize one use it like any other type of system. Let's continue from the above example  of the Thomas cyclical system
+```@example MAIN
+using Attractors
+using PredefinedDynamicalSystems
+ds = PredefinedDynamicalSystems.thomas_cyclical(b = 0.1665);
+```
+The three limit cycles attractors we have above become fixed points in the Poincaré map (for appropriately chosen hyperplanes). Since we already know the 3D structure of the basins, we can see that an appropriately chosen hyperplane is just the plane `z = 0`. Hence, we define a Poincaré map on this plane:
+
+```@example MAIN
+plane = (3, 0.0)
+pmap = PoincareMap(ds, plane)
+```
+
+We define the same grid as before, but now only we only use the x-y coordinates. This is because we can utilize the special `reinit!` method of the [`PoincareMap`](@ref), that allows us to initialize a new state directly on the hyperplane (and then the remaining variable of the dynamical system takes its value from the hyperplane itself).
+```@example MAIN
+xg = yg = range(-6.0, 6.0; length = 251)
+grid = (xg, yg)
+mapper = AttractorsViaRecurrences(pmap, grid; sparse = false)
+```
+All that is left to do is to call [`basins_of_attraction`](@ref):
+
+```@example MAIN
+basins, attractors = basins_of_attraction(mapper; show_progress = false);
+```
+
+```@example MAIN
+heatmap_basins_attractors(grid, basins, attractors)
+```
+_just like in the example above, there is a fourth attractor with 0 basin fraction. This is an unstable fixed point, and exists exactly because we provided a grid with the unstable fixed point exactly on this grid_
+
+
+## Irregular grid for `AttractorsViaRecurrences`
+It is possible to provide an irregularly spaced grid to `AttractorsViaRecurrences`. This can make algorithm performance better for continuous time systems where the state space flow has significantly different speed in some state space regions versus others.
+
+In the following example the dynamical system has only one attractor: a limit cycle. However, near the origin (0, 0) the timescale of the dynamics becomes very slow. As the trajectory is stuck there for quite a while, the recurrences algorithm may identify this region as an "attractor" (incorrectly). The solutions vary and can be to increase drastically the max time checks for finding attractors, or making the grid much more fine. Alternatively, one can provide a grid that is only more fine near the origin and not fine elsewhere.
+
+The example below highlights that for rather coarse settings of grid and convergence thresholds, using a grid that is finer near (0, 0) gives correct results:
+
+```@example MAIN
+using Attractors, CairoMakie
+
+function predator_prey_fastslow(u, p, t)
+    α, γ, ϵ, ν, h, K, m = p
+    N, P = u
+    du1 = α*N*(1 - N/K) - γ*N*P / (N+h)
+    du2 = ϵ*(ν*γ*N*P/(N+h) - m*P)
+    return SVector(du1, du2)
+end
+γ = 2.5
+h = 1
+ν = 0.5
+m = 0.4
+ϵ = 1.0
+α = 0.8
+K = 15
+u0 = rand(2)
+p0 = [α, γ, ϵ, ν, h, K, m]
+ds = CoupledODEs(predator_prey_fastslow, u0, p0)
+
+fig = Figure()
+ax = Axis(fig[1,1])
+
+# when pow > 1, the grid is finer close to zero
+for pow in (1, 2)
+    xg = yg = range(0, 18.0^(1/pow); length = 200).^pow
+    mapper = AttractorsViaRecurrences(ds, (xg, yg);
+        Dt = 0.1, sparse = true,
+        mx_chk_fnd_att = 10, mx_chk_loc_att = 10,
+        mx_chk_safety = 1000,
+    )
+
+    # Find attractor and its fraction (fraction is always 1 here)
+    sampler, _ = statespace_sampler(HRectangle(zeros(2), fill(18.0, 2)), 42)
+    fractions = basins_fractions(mapper, sampler; N = 100, show_progress = false)
+    attractors = extract_attractors(mapper)
+    scatter!(ax, vec(attractors[1]); markersize = 16/pow, label = "pow = $(pow)")
+end
+
+axislegend(ax)
+
+fig
+```
+## Subdivision Based Grid for `AttractorsViaRecurrences`
+To achieve even better results for this kind of problematic systems than with previuosly introduced `Irregular Grids`  we provide a functionality to construct `Subdivision Based Grids` in which
+one can obtain more coarse or dense structure not only along some axis but for a specific regions where the state space flow has
+significantly different speed. [`subdivided_based_grid`](@ref) enables automatic evaluation of velocity vectors for regions of originally user specified
+grid to further treat those areas as having more dense or coarse structure than others.
+
+```@example MAIN
+using Attractors, CairoMakie
+
+function predator_prey_fastslow(u, p, t)
+    α, γ, ϵ, ν, h, K, m = p
+    N, P = u
+    du1 = α*N*(1 - N/K) - γ*N*P / (N+h)
+    du2 = ϵ*(ν*γ*N*P/(N+h) - m*P)
+return SVector(du1, du2)
+end
+γ = 2.5
+h = 1
+ν = 0.5
+m = 0.4
+ϵ = 1.0
+α = 0.8
+K = 15
+u0 = rand(2)
+p0 = [α, γ, ϵ, ν, h, K, m]
+ds = CoupledODEs(predator_prey_fastslow, u0, p0)
+
+xg = yg = range(0, 18, length = 30)
+# Construct `Subdivision Based Grid`
+grid = subdivision_based_grid(ds, (xg, yg))
+grid.lvl_array
+```
+The constructed array corresponds to levels of dicretization for specific regions of the grid as a powers of 2,
+meaning that if area index is assigned to be `3`, for example, the algorithm will treat the region as one being
+`2^3 = 8` times more dense than originally user provided grid `(xg, yg)`.
+
+Now upon the construction of this structure, one can simply pass it into mapper function as usual.
+
+```@example MAIN
+fig = Figure()
+ax = Axis(fig[1,1])
+# passing SubdivisionBasedGrid into mapper
+mapper = AttractorsViaRecurrences(ds, grid;
+        Dt = 0.1, sparse = true,
+        mx_chk_fnd_att = 10, mx_chk_loc_att = 10,
+        mx_chk_safety = 1000,
+    )
+
+# Find attractor and its fraction (fraction is always 1 here)
+sampler, _ = statespace_sampler(HRectangle(zeros(2), fill(18.0, 2)), 42)
+fractions = basins_fractions(mapper, sampler; N = 100, show_progress = false)
+attractors_SBD = extract_attractors(mapper)
+scatter!(ax, vec(attractors_SBD[1]); label = "SubdivisionBasedGrid")
+
+
+# to compare the results we also construct RegularGrid of same length here
+xg = yg = range(0, 18, length = 30)
+mapper = AttractorsViaRecurrences(ds, (xg, yg);
+        Dt = 0.1, sparse = true,
+        mx_chk_fnd_att = 10, mx_chk_loc_att = 10,
+        mx_chk_safety = 1000,
+    )
+
+sampler, _ = statespace_sampler(HRectangle(zeros(2), fill(18.0, 2)), 42)
+fractions = basins_fractions(mapper, sampler; N = 100, show_progress = false)
+attractors_reg = extract_attractors(mapper)
+scatter!(ax, vec(attractors_reg[1]); label = "RegularGrid")
+
+axislegend(ax)
+fig
+
+```
+
 ## Basin fractions continuation in the magnetic pendulum
 
 Perhaps the simplest application of [`continuation`](@ref) is to produce a plot of how the fractions of attractors change as we continuously change the parameter we changed above to calculate tipping probabilities.
@@ -237,7 +418,8 @@ mapper = AttractorsViaRecurrences(ds, (xg, yg); Δt = 1.0)
 prange = [[1, 1, γ] for γ in γγ]
 pidx = :γs
 # important to make a sampler that respects the symmetry of the system
-sampler, = statespace_sampler(Xoshiro(1234); spheredims = 2, radius = 3.0)
+region = HSphere(3.0, 2)
+sampler, = statespace_sampler(region, 1234)
 # continue attractors and basins:
 # `Inf` threshold fits here, as attractors move smoothly in parameter space
 rsc = RecurrencesFindAndMatch(mapper; threshold = Inf)
@@ -255,7 +437,7 @@ We visualize them using a predefined function that you can find in `docs/basins_
 
 ```@example MAIN
 # careful; `prange` isn't a vector of reals!
-Main.basins_curves_plot(fractions_curves, γγ)
+plot_basins_curves(fractions_curves, γγ)
 ```
 
 
@@ -307,9 +489,7 @@ xg = range(0, 60; length = 300)
 grid = ntuple(x -> xg, 8)
 prange = range(0.2, 0.3; length = total_parameter_values)
 pidx = :D
-sampler, = statespace_sampler(Xoshiro(1234);
-    min_bounds = minimum.(grid), max_bounds = maximum.(grid)
-)
+sampler, = statespace_sampler(grid, 1234)
 # initialize mapper
 mapper = AttractorsViaRecurrences(ds, grid; recurrences_kwargs...)
 # perform continuation of attractors and their basins
@@ -318,7 +498,7 @@ fractions_curves, attractors_info = continuation(
     continuation, prange, pidx, sampler;
     show_progress = true, samples_per_parameter
 );
-Main.basins_curves_plot(fractions_curves, prange; separatorwidth = 1)
+plot_basins_curves(fractions_curves, prange; separatorwidth = 1)
 ```
 
 ![](https://raw.githubusercontent.com/JuliaDynamics/JuliaDynamics/master/videos/attractors/multispecies_competition_fractions.png)
@@ -349,7 +529,7 @@ aggregated_fractions, aggregated_info = aggregate_attractor_fractions(
     fractions_curves, attractors_info, featurizer, groupingconfig
 )
 
-Main.basins_curves_plot(aggregated_fractions, prange;
+plot_basins_curves(aggregated_fractions, prange;
     separatorwidth = 1, colors = ["green", "black"],
     labels = Dict(1 => "extinct", 2 => "alive"),
 )
@@ -378,7 +558,8 @@ mapper = AttractorsViaFeaturizing(psys, featurizer; Ttr = 200, T = 1)
 
 xg = yg = range(-4, 4; length = 101)
 
-sampler, = statespace_sampler(; min_bounds = [-4,-4], max_bounds=[4,4])
+region = HRectangle([-4, 4], [4, 4])
+sampler, = statespace_sampler(region)
 
 fs = basins_fractions(mapper, sampler; show_progress = false)
 ```
@@ -387,7 +568,7 @@ As expected, the fractions are each about 1/3 due to the system symmetry.
 
 ## Featurizing and grouping across parameters (MCBB)
 Here we showcase the example of the Monte Carlo Basin Bifurcation publication.
-For this, we will use [`GroupAcrossParameter`](@ref) while also providing a `par_weight = 1` keyword.
+For this, we will use [`FeaturizeGroupAcrossParameter`](@ref) while also providing a `par_weight = 1` keyword.
 However, we will not use a network of 2nd order Kuramoto oscillators (as done in the paper by Gelbrecht et al.) because it is too costly to run on CI.
 Instead, we will use "dummy" system which we know analytically the attractors and how they behave versus a parameter.
 
@@ -419,8 +600,7 @@ ds = DiscreteDynamicalSystem(dumb_map, [0., 0.], [r])
 
 
 ```@example MAIN
-sampler, = statespace_sampler(Random.MersenneTwister(1234);
-    min_bounds = [-3.0, -3.0], max_bounds = [3.0, 3.0])
+sampler, = statespace_sampler(HRectangle([-3.0, -3.0], [3.0, 3.0]), 1234)
 
 rrange = range(0, 2; length = 21)
 ridx = 1
@@ -428,7 +608,7 @@ ridx = 1
 featurizer(a, t) = a[end]
 clusterspecs = GroupViaClustering(optimal_radius_method = "silhouettes", max_used_features = 200)
 mapper = AttractorsViaFeaturizing(ds, featurizer, clusterspecs; T = 20, threaded = true)
-gap = GroupAcrossParameter(mapper; par_weight = 1.0)
+gap = FeaturizeGroupAcrossParameter(mapper; par_weight = 1.0)
 fractions_curves, clusters_info = continuation(
     gap, rrange, ridx, sampler; show_progress = false
 )

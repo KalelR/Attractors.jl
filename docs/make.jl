@@ -10,8 +10,11 @@ pages = [
     "attractors.md",
     "basins.md",
     "continuation.md",
+    "visualization.md",
     "examples.md",
+    "references.md",
 ]
+
 
 import Downloads
 Downloads.download(
@@ -20,9 +23,13 @@ Downloads.download(
 )
 include("build_docs_with_style.jl")
 
-# Special file
-include("../src/plotting.jl")
+using DocumenterCitations
+
+bib = CitationBibliography(
+    joinpath(@__DIR__, "refs.bib");
+    style=:authoryear
+)
 
 build_docs_with_style(pages, Attractors, DynamicalSystemsBase, StateSpaceSets;
-    expandfirst = ["index.md"],
+    expandfirst = ["index.md"], bib,
 )

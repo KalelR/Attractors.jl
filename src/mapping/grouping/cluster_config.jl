@@ -7,15 +7,15 @@ export GroupViaClustering
 
 Initialize a struct that contains instructions on how to group features in
 [`AttractorsViaFeaturizing`](@ref). `GroupViaClustering` clusters features into
-groups using DBSCAN, similar to the original work by bSTAB[^Stender2021] and
-MCBB[^Gelbrecht2021]. Several options on clustering are available, see keywords below.
+groups using DBSCAN, similar to the original work by bSTAB [Stender2021](@cite) and
+MCBB [Gelbrecht2021](@cite). Several options on clustering are available, see keywords below.
 
 The defaults are a significant improvement over existing literature, see Description.
 
 ## Keyword arguments
 
 * `clust_distance_metric = Euclidean()`: A metric to be used in the clustering.
-  It can be any function `f(a, b)` that returns the distance between vectors
+  It can be any function `f(a, b)` that returns the distance between real-valued vectors
   `a, b`. All metrics from Distances.jl can be used here.
 * `rescale_features = true`: if true, rescale each dimension of the extracted features
   separately into the range `[0,1]`. This typically leads to more accurate clustering.
@@ -26,7 +26,6 @@ The defaults are a significant improvement over existing literature, see Descrip
 * `use_mmap = false`: whether to use an on-disk map for creating the distance matrix
   of the features. Useful when the features are so many where a matrix with side their
   length would not fit to memory.
-
 
 ### Keywords for optimal radius estimation
 
@@ -50,7 +49,7 @@ The defaults are a significant improvement over existing literature, see Descrip
   though not necessarily much, while always reducing speed.
 * `silhouette_statistic::Function = mean`: statistic (e.g. mean or minimum) of the
   silhouettes that is maximized in the "optimal" clustering. The original implementation
-  in [^Stender2021] used the `minimum` of the silhouettes, and typically performs less
+  in [Stender2021](@cite) used the `minimum` of the silhouettes, and typically performs less
   accurately than the `mean`.
 * `max_used_features = 0`: if not `0`, it should be an `Int` denoting the max amount of
   features to be used when finding the optimal radius. Useful when clustering a very large
@@ -58,6 +57,7 @@ The defaults are a significant improvement over existing literature, see Descrip
   attraction).
 
 ## Description
+
 The DBSCAN clustering algorithm is used to automatically identify clusters of similar
 features. Each feature vector is a point in a feature space. Each cluster then basically
 groups points that are closely packed together. Closely packed means that the points have
@@ -67,6 +67,7 @@ task. Currently, three methods are implemented to automatically estimate an "opt
 radius.
 
 ### Estimating the optimal radius
+
 The default method is the **silhouettes method**, which includes keywords `silhouette` and
 `silhouette_optim`. Both of them search for the radius that optimizes the clustering,
 meaning the one that maximizes a statistic `silhouette_statistic` (e.g. mean value) of a
@@ -84,20 +85,8 @@ with similar accuracy. A third alternative is the`"elbow"` method, which works b
 calculating the distance of each point to its k-nearest-neighbors (with `k=min_neighbors`)
 and finding the distance corresponding to the highest derivative in the curve of the
 distances, sorted in ascending order. This distance is chosen as the optimal radius. It is
-described in [^Kriegel1996] and [^Schubert2017]. It typically performs considerably worse
+described in [Ester1996](@cite) and [Schubert2017](@cite). It typically performs considerably worse
 than the `"silhouette"` methods.
-
-[^Stender2021]:
-    Stender & Hoffmann 2021, [bSTAB: an open-source software for computing the basin
-    stability of multi-stable dynamical systems](https://doi.org/10.1007/s11071-021-06786-5)
-[^Gelbrecht2021]:
-    Maximilian Gelbrecht et al 2021, Monte Carlo basin bifurcation analysis,
-    [2020 New J. Phys.22 03303](http://dx.doi.org/10.1088/1367-2630/ab7a05)
-[^Kriegel1996]: Ester, Kriegel, Sander and Xu: A Density-Based Algorithm for Discovering
-    Clusters in Large Spatial Databases with Noise
-[^Schubert2017]:
-    Schubert, Sander, Ester, Kriegel and Xu: DBSCAN Revisited, Revisited: Why and How You
-    Should (Still) Use DBSCAN
 """
 struct GroupViaClustering{R<:Union{Real, String}, M, F<:Function} <: GroupingConfig
     clust_distance_metric::M
@@ -169,8 +158,8 @@ function _distance_matrix(features, config;
         @info "parallel"
         @inbounds for i in eachindex(features)
             Threads.@threads for j in i:length(features)
-                dists[i, j] = metric(features[i], features[j])
-                dists[j, i] = dists[i, j] # symmetry
+                v = metric(features[i], features[j])
+                dists[i, j] = dists[j, i] = v # utilize symmetry
             end
         end
     end
@@ -183,7 +172,6 @@ function _distance_matrix(features, config;
             # Instead of going over all `j` we go over `(k+1)` to end,
             # and also add value to transpose. (also assume that if j=k, distance is 0)
             for j in (k+1):size(dists, 1)
-                # TODO: Shouldn't we use `metric` here instead of `abs`?
                 pdist = par_weight*abs(par_vector[k] - par_vector[j])
                 dists[k,j] += pdist
                 dists[j,k] += pdist
@@ -198,12 +186,14 @@ function _extract_ϵ_optimal(features, config::GroupViaClustering)
     num_attempts_radius, silhouette_statistic, max_used_features) = config
 
     if optimal_radius_method isa String
+        # subsample features to accelerate optimal radius search
         if max_used_features == 0 || max_used_features > length(features)
             features_for_optimal = features
         else
             features_for_optimal = sample(features, max_used_features; replace = false)
         end
-        ϵ_optimal = optimal_radius_dbscan(
+        # get optimal radius (function dispatches on the radius method)
+        ϵ_optimal, v_optimal = optimal_radius_dbscan(
             features_for_optimal, min_neighbors, clust_distance_metric,
             optimal_radius_method, num_attempts_radius, silhouette_statistic
         )

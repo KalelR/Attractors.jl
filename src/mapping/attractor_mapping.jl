@@ -189,3 +189,4 @@ end
 include("attractor_mapping_proximity.jl")
 include("attractor_mapping_recurrences.jl")
 include("attractor_mapping_featurizing.jl")
+include("grouping/integrate_and_regroup.jl")

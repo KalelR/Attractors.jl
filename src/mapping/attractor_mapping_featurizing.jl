@@ -95,14 +95,17 @@ ValidICS = Union{AbstractStateSpaceSet, Function}
 #####################################################################################
 # We only extend the general `basins_fractions`, because the clustering method
 # cannot map individual initial conditions to attractors
-function basins_fractions(mapper::AttractorsViaFeaturizing, ics::ValidICS;
+function basins_fractions(mapper::AttractorsViaFeaturizing, og_ics::ValidICS;
     show_progress = true, N = 1000, additional_ics::Union{ValidICS, Nothing} = nothing,
 )
-    features = extract_features(mapper, ics; show_progress, N)
-    if typeof(additional_ics) <: ValidICS
-        additional_features = extract_features(mapper, additional_ics; show_progress, N)
-        features = vcat(features, additional_features)
+    ics = 
+    if isnothing(additional_ics) || typeof(og_ics) <: Function
+        og_ics
+    else
+        Dataset(vcat(Matrix(og_ics), Matrix(additional_ics)))
     end
+    
+    features = extract_features(mapper, ics; show_progress, N)
 
     group_labels = group_features(features, mapper.group_config)
     fs = basins_fractions(group_labels) # Vanilla fractions method with Array input
@@ -179,6 +182,7 @@ end
 
 function extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics)
     uidxs = unique(i -> labels[i], eachindex(labels))
+    @show uidxs, length(ics)
     return Dict(labels[i] => trajectory(mapper.ds, mapper.total, ics[i];
     Ttr = mapper.Ttr, Δt = mapper.Δt)[1] for i in uidxs if i ≠ -1)
 end

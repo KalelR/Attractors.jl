@@ -6,6 +6,7 @@ function continuation_fix_convergence(fam, prange, pidx, fs_curves, atts_info; T
     fs_curves_new = deepcopy(fs_curves) 
     atts_info_new = deepcopy(atts_info)
        
+    @show fam.mapper.ds.diffeq
     (; mapper, distance, threshold) = fam
     
     if isnothing(T) 
@@ -21,7 +22,7 @@ function continuation_fix_convergence(fam, prange, pidx, fs_curves, atts_info; T
         atts = atts_info[idx]
         fs = fs_curves[idx]
 
-        atts_integ = Dict(k => trajectory(mapper.ds, T, att[end]; Ttr, Δt=0.01)[1] for (k, att) in atts)
+        atts_integ = Dict(k => trajectory(mapper.ds, T, att[end]; Ttr, Δt)[1] for (k, att) in atts)
         ts = Ttr:Δt:Ttr+T
         features_integ = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
         
@@ -56,7 +57,8 @@ end
 
 function transition(features_integ, mapper)
     group_labels = group_features(collect(values(features_integ)), mapper.group_config)
-    tmap = Dict(collect(keys(features_integ)) .=> group_labels)
+    @show group_labels
+    tmap = Dict(collect(keys(features_integ)) .=> group_labels)#map_keys_from_previous_grouping_to_keys_from_new_grouping
     new_keys = unique(group_labels) 
     idxs_going_to_each_key = map(ulab->findall(x->x==ulab, group_labels), new_keys)
     return new_keys, tmap, idxs_going_to_each_key

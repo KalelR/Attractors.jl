@@ -114,11 +114,11 @@ function basins_fractions(mapper::AttractorsViaFeaturizing, og_ics::ValidICS;
         end
     
     features = extract_features(mapper, ics; show_progress, N)
-    # @show features
     # @info "Finished features"
     GC.gc()
     # @info "Finished features, now going to clustering"
     ufeats = unique(map(feature->round.(feature, sigdigits=2), features))
+    # ufeats = unique(map(feature->round.(feature, sigdigits=3), features))
     @show ufeats
     group_labels = group_features(features, mapper.group_config)
     # @info "Finished clustering"

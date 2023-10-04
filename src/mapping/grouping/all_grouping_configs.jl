@@ -12,6 +12,7 @@ Currently available grouping configurations are:
 - [`GroupViaClustering`](@ref)
 - [`GroupViaNearestFeature`](@ref)
 - [`GroupViaHistogram`](@ref)
+- [`GroupViaPairwiseComparison`](@ref)
 
 `GroupingConfig` defines an extendable interface.
 The only thing necessary for a new grouping configuration is to:
@@ -55,3 +56,4 @@ include("cluster_config.jl")
 include("compare_config.jl")
 include("histogram_config.jl")
 include("nearest_feature_config.jl")
+include("pairwise_comparison.jl")

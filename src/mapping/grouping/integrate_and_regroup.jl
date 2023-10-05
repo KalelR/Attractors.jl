@@ -9,14 +9,14 @@ function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded
     ts = Ttr:Δt:Ttr+T
     features = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
 
-    labels = group_features(collect(values(features_integ)), mapper.group_config)
+    labels = group_features(collect(values(features)), mapper.group_config)
     new_keys, tmap, idxs_going_to_each_key = transition_info(labels, features)
     fs_new = _updated_fs(fs, new_keys, tmap)
     atts_new = _updated_atts(new_keys, idxs_going_to_each_key, atts_integ)
     return atts_new, fs_new
 end
 
-function transition_info(group_labels, features_integ)
+function transition_info(group_labels, features)
     tmap = Dict(collect(keys(features)) .=> group_labels) # map keys from previous grouping to keys from new grouping
     new_keys = unique(group_labels) 
     idxs_going_to_each_key = map(ulab->findall(x->x==ulab, group_labels), new_keys)

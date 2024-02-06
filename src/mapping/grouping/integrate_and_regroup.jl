@@ -13,7 +13,7 @@ function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded
     new_keys, tmap, idxs_going_to_each_key = transition_info(labels, features)
     fs_new = _updated_fs(fs, new_keys, tmap)
     atts_new = _updated_atts(new_keys, idxs_going_to_each_key, atts_integ)
-    return atts_new, fs_new
+    return atts_new, fs_new, features
 end
 
 function transition_info(group_labels, features)

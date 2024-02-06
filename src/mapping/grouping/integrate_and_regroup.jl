@@ -5,40 +5,35 @@ eliminating duplicate attractors, which may come about from unideal simulation t
 to elimiate long transients).
 """
 function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded = true)
-    atts_integ = Dict(k => trajectory(mapper.ds, T, att[end]; Ttr, Δt)[1] for (k, att) in atts)
+    atts_integ = Dict(k => trajectory(mapper.ds, T, att[end]; Ttr, Δt)[1] for (k, att) in atts) #to parallelize, need functin that return trajs and features
     ts = Ttr:Δt:Ttr+T
     features = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
-
-    labels = group_features(collect(values(features_integ)), mapper.group_config)
-    new_keys, tmap, idxs_going_to_each_key = transition_info(labels, features)
-    fs_new = _updated_fs(fs, new_keys, tmap)
-    atts_new = _updated_atts(new_keys, idxs_going_to_each_key, atts_integ)
-    return atts_new, fs_new
+    labels = group_features(collect(values(features)), mapper.group_config)
+    tmap = Dict(keys(features) .=> labels) # map keys from previous grouping to keys from new grouping
+    new_keys = unique(labels) 
+    fs_new, atts_new = _updated_fs_and_atts(fs, atts_integ, new_keys, tmap)
+    return atts_new, fs_new, features
 end
 
-function transition_info(group_labels, features_integ)
-    tmap = Dict(collect(keys(features)) .=> group_labels) # map keys from previous grouping to keys from new grouping
-    new_keys = unique(group_labels) 
-    idxs_going_to_each_key = map(ulab->findall(x->x==ulab, group_labels), new_keys)
-    return new_keys, tmap, idxs_going_to_each_key
-end
+# function transition_info(group_labels, features)
+#     idxs_going_to_each_key = map(ulab->findall(x->x==ulab, group_labels), new_keys)
+#     return new_keys, tmap, idxs_going_to_each_key
+# end
 
-function _updated_fs(fs::Dict{A,B}, new_keys, tmap) where {A,B}
+function _updated_fs_and_atts(fs::Dict{A,B}, atts_integ::Dict{A, C}, new_keys, tmap) where {A,B,C}
     fs_new = Dict{A,B}()
-    for key in new_keys 
-        prev_keys_going_to_new_key = [k for (k,v) in tmap if v == key]
+    atts_new = Dict{A,C}()
+    for new_key in new_keys 
+        prev_keys_going_to_new_key = [k for (k,v) in tmap if v == new_key]
         fs_prev_keys = map(k->fs[k], prev_keys_going_to_new_key)
-        fs_new[key] = sum(fs_prev_keys)
+        fs_new[new_key] = sum(fs_prev_keys)
+        
+        prev_keys_first = minimum(prev_keys_going_to_new_key)
+        @show prev_keys_first
+        atts_new[new_key] = atts_integ[prev_keys_first]
     end
-    return fs_new 
+    return fs_new, atts_new
 end
-
-function _updated_atts(new_keys, idxs_going_to_each_key, atts_integ)
-    idxs_new_atts = [idx[1] for idx in idxs_going_to_each_key]
-    atts_new = Dict(new_keys .=> collect(values(atts_integ))[idxs_new_atts]) #each label is associated to an attractor; that attractor, amongs potentially many that lead to the same labels, is the one that appears first in collect(values(atts_integ)) (a bit arbitrary but ok)
-    return atts_new
-end
-
 
 function integrate_and_regroup_and_rematch(fam, prange, pidx, atts_info, fs_curves; kwargs...)
     fs_curves_new = deepcopy(fs_curves) 
@@ -50,8 +45,9 @@ function integrate_and_regroup_and_rematch(fam, prange, pidx, atts_info, fs_curv
     
     for idx in eachindex(prange)
         p = prange[idx]
+        @show p
         set_parameter!(mapper.ds, pidx, p)
-        atts, fs = atts_info[idx], fs_curves[idx]
+        atts, fs = atts_info_new[idx], fs_curves_new[idx]
         atts_new, fs_new = integrate_and_regroup(mapper, atts, fs; kwargs...)
         atts_info_new[idx] = atts_new 
         fs_curves_new[idx] = fs_new 
@@ -60,3 +56,63 @@ function integrate_and_regroup_and_rematch(fam, prange, pidx, atts_info, fs_curv
     match_continuation!(fs_curves_new, atts_info_new; distance, threshold)
     return atts_info_new, fs_curves_new
 end
+
+
+# fs = Dict(1=> 0.1, 3=>0.2, 5=>0.2, 2=>0.5)
+# atts = Dict(1=>[1,1], 3=>[2,2], 5=>[3,3], 2=>[4,4])
+# 
+# atts_integ = Dict(1=>[1,1], 3=>[2,2], 5=>[3,3], 2=>[1,1])
+# labels = replace(collect(keys(atts_integ)), 2=>1)
+# 
+# tmap = Dict(keys(atts_integ) .=> labels) # map keys from previous grouping to keys from new grouping
+# new_keys = unique(labels) 
+# @show tmap
+# # @show idxs_going_to_each_key
+# fs_new, atts_new = _updated_fs_and_atts(fs, atts_integ, new_keys, tmap)
+
+
+# function _updated_atts(tmap, atts_integ)
+#     # idxs_new_atts = [idx[1] for idx in idxs_going_to_each_key]
+#     # @show idxs_new_atts
+#     atts_new = Dict(new_key => atts_integ[old_key] for (old_key, new_key) in tmap) #each label is associated to an attractor; that attractor, amongs potentially many that lead to the same labels, is the one that appears first in collect(values(atts_integ)) (a bit arbitrary but ok)
+#     return atts_new
+# end
+# 
+# function _updated_atts(new_keys, idxs_going_to_each_key, atts_integ)
+#     idxs_new_atts = [idx[1] for idx in idxs_going_to_each_key]
+#     @show idxs_new_atts
+#     atts_new = Dict(new_keys .=> collect(values(atts_integ))[idxs_new_atts]) #each label is associated to an attractor; that attractor, amongs potentially many that lead to the same labels, is the one that appears first in collect(values(atts_integ)) (a bit arbitrary but ok)
+#     return atts_new
+# end
+# 
+# function _updated_atts(new_keys, idxs_going_to_each_key, atts_integ)
+#     idxs_new_atts = [idx[1] for idx in idxs_going_to_each_key]
+#     atts_integ = collect(values(atts_integ)) #TODO: unecessary allocaton??
+#     atts_new = Dict(new_keys .=> atts_integ[idxs_new_atts]) #each label is associated to an attractor; that attractor, amongs potentially many that lead to the same labels, is the one that appears first in collect(values(atts_integ)) (a bit arbitrary but ok)
+#     return atts_new
+# end
+
+# function _updated_fs(fs::Dict{A,B}, new_keys, tmap) where {A,B}
+#     fs_new = Dict{A,B}()
+#     for key in new_keys 
+#         prev_keys_going_to_new_key = [k for (k,v) in tmap if v == key]
+#         fs_prev_keys = map(k->fs[k], prev_keys_going_to_new_key)
+#         fs_new[key] = sum(fs_prev_keys)
+#     end
+#     return fs_new 
+# end
+
+
+# function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded = true, show_progress = false)
+#     ics = StateSpaceSet([att[end] for (k, att) in atts])
+#     features = Attractors.extract_features(mapper, ics; show_progress)
+#     # features_dict = Dict(keys(atts) .=> features) #
+#     labels = group_features(features, mapper.group_config)
+#     
+#     tmap = Dict(keys(atts) .=> labels) # map keys from previous grouping to keys from new grouping; ics and therefore features and therefore labels are in the order of keys(atts)
+#     @show tmap
+#     new_keys = unique(labels) 
+#     
+#     fs_new, atts_new = _updated_fs_and_atts(fs, atts_integ, new_keys, tmap)
+#     return atts_new, fs_new
+# end

@@ -15,6 +15,60 @@ function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded
     return atts_new, fs_new, features
 end
 
+function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded = true)
+    ics = Dict(k => att[end] for (k, att) in atts)
+    atts_integ, ts = integrate_ics(mapper.ds, ics, T; threaded, Ttr, Δt)
+    features = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
+    labels = group_features(collect(values(features)), mapper.group_config)
+    tmap = Dict(keys(features) .=> labels) # map keys from previous grouping to keys from new grouping
+    new_keys = unique(labels) 
+    fs_new, atts_new = _updated_fs_and_atts(fs, atts_integ, new_keys, tmap)
+    return atts_new, fs_new, features
+end
+
+
+"""
+maintains the key order from `ics`
+"""
+function integrate_ics(ds, args...; threaded=true, kwargs...)
+    if !(threaded)
+        integrate_ics_single(ds, args...; kwargs...)
+    else
+        integrate_ics_threaded(ds, args...; kwargs...)
+    end
+end
+
+function integrate_ics_single(ds, ics::Dict{A, SVector{B, C}}, T; Ttr=0.0, Δt=1.0, show_progress=true) where {A, B, C}
+    N = length(ics) # number of actual ICs
+    att_dict = Dict{A, StateSpaceSet{B,C}}()
+    progress = ProgressMeter.Progress(N; desc = "Integrating trajectories:", enabled=show_progress)
+    for k in collect(keys(ics))
+        ic = ics[k]
+        att_dict[k] = trajectory(ds, T, ic; Ttr, Δt)[1]
+        ProgressMeter.next!(progress)
+    end
+    ts = Ttr:Δt:Ttr+T
+    return att_dict, ts 
+end
+
+function integrate_ics_threaded(ds, ics::Dict{A, SVector{B, C}}, T; Ttr=0.0, Δt=1.0, show_progress=true) where {A, B, C}
+    N = length(ics) # number of actual ICs
+    systems = [deepcopy(ds) for _ in 1:(Threads.nthreads() - 1)]
+    pushfirst!(systems, ds)
+    
+    att_dict = Dict{A, StateSpaceSet{B,C}}()
+    
+    progress = ProgressMeter.Progress(N; desc = "Integrating trajectories:", enabled=show_progress)
+    Threads.@threads for k in collect(keys(ics))
+        ic = ics[k]
+        ds = systems[Threads.threadid()]
+        att_dict[k] = trajectory(ds, T, ic; Ttr, Δt)[1]
+        ProgressMeter.next!(progress)
+    end
+    ts = Ttr:Δt:Ttr+T
+    return att_dict, ts 
+end
+
 # function transition_info(group_labels, features)
 #     idxs_going_to_each_key = map(ulab->findall(x->x==ulab, group_labels), new_keys)
 #     return new_keys, tmap, idxs_going_to_each_key

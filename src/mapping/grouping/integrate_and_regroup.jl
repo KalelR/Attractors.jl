@@ -19,6 +19,7 @@ function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded
     ics = Dict(k => att[end] for (k, att) in atts)
     atts_integ, ts = integrate_ics(mapper.ds, ics, T; threaded, Ttr, Δt)
     features = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
+    @show features
     labels = group_features(collect(values(features)), mapper.group_config)
     tmap = Dict(keys(features) .=> labels) # map keys from previous grouping to keys from new grouping
     new_keys = unique(labels) 
@@ -83,7 +84,7 @@ function _updated_fs_and_atts(fs::Dict{A,B}, atts_integ::Dict{A, C}, new_keys, t
         fs_new[new_key] = sum(fs_prev_keys)
         
         prev_keys_first = minimum(prev_keys_going_to_new_key)
-        @show prev_keys_first
+        # @show prev_keys_first
         atts_new[new_key] = atts_integ[prev_keys_first]
     end
     return fs_new, atts_new

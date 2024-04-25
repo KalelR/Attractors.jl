@@ -99,9 +99,11 @@ function basins_fractions(mapper::AttractorsViaFeaturizing, og_ics::ValidICS;
     show_progress = true, N = 1000, additional_ics::Union{ValidICS, Nothing} = nothing,
 )
     if typeof(additional_ics) <: ValidICS
-        all_ics = deepcopy(ics)
+        all_ics = deepcopy(og_ics)
         append!(all_ics, additional_ics)
         ics = all_ics
+    else
+        ics=og_ics
     end
     features = extract_features(mapper, ics; show_progress, N)
     group_labels = group_features(features, mapper.group_config)
@@ -179,7 +181,6 @@ end
 
 function extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics)
     uidxs = unique(i -> labels[i], eachindex(labels))
-    @show uidxs, length(ics)
     return Dict(labels[i] => trajectory(mapper.ds, mapper.total, ics[i];
     Ttr = mapper.Ttr, Δt = mapper.Δt)[1] for i in uidxs if i ≠ -1)
 end

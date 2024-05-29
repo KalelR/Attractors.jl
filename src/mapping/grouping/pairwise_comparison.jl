@@ -94,9 +94,10 @@ function _cluster_features_into_labels(features, config::GroupViaPairwiseCompari
             feature_label = next_cluster_label
             push!(cluster_idxs, idx_feature)
             push!(cluster_labels, next_cluster_label)
-            # @info "New attractor $next_cluster_label, min dist was $min_dist > $distance_threshold" #TODO: allow this when debugging verbose mode on!
+            @info "New attractor $next_cluster_label at idx = $idx_feature, min dist was $min_dist > $distance_threshold. Feature = $feature." #TODO: allow this when debugging verbose mode on!
             next_cluster_label += 1
         else #smaller than threshold => assign to closest cluster 
+            @info "Rejected attractor $next_cluster_label at idx = $idx_feature, min dist was $min_dist < $distance_threshold. Feature = $feature." #TODO: allow this when debugging verbose mode on!
             feature_label = closest_cluster_label
         end
         

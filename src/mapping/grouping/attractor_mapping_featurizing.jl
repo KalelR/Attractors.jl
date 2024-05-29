@@ -6,7 +6,7 @@ export AttractorsViaFeaturizing, extract_features
 #####################################################################################
 # Structs and documentation string
 #####################################################################################
-include("grouping/all_grouping_configs.jl")
+include("all_grouping_configs.jl")
 
 struct AttractorsViaFeaturizing{DS<:DynamicalSystem, G<:GroupingConfig, F, T, D, V} <: AttractorMapper
     ds::DS
@@ -27,15 +27,15 @@ end
 
 Initialize a `mapper` that maps initial conditions to attractors using a featurizing and
 grouping approach. This is a supercase of the featurizing and clustering approach that
-is utilized by bSTAB [Stender2021](@cite) and MCBB [Gelbrecht2021](@cite).
+is utilized by bSTAB [Stender2021](@cite) and MCBB [Gelbrecht2020](@cite).
 See [`AttractorMapper`](@ref) for how to use the `mapper`.
 This `mapper` also allows the syntax `mapper(u0)` but only if the `grouping_config`
 is _not_ `GroupViaClustering`.
 
-`featurizer` is a function `f(A, t) that takes as an input an integrated trajectory
+`featurizer` is a function `f(A, t)` that takes as an input an integrated trajectory
 `A::StateSpaceSet` and the corresponding time vector `t` and returns a vector
 `v` of features describing the trajectory.
-For better performance, it is strongly recommended that `v  isa SVector{<:Real}`.
+For better performance, it is strongly recommended that `v isa SVector{<:Real}`.
 
 `grouping_config` is an instance of any subtype of [`GroupingConfig`](@ref) and decides
 how features will be grouped into attractors, see below.
@@ -80,11 +80,11 @@ DynamicalSystemsBase.rulestring(m::AttractorsViaFeaturizing) = DynamicalSystemsB
 
 function Base.show(io::IO, mapper::AttractorsViaFeaturizing)
     ps = generic_mapper_print(io, mapper)
-    println(io, rpad(" type: ", ps), nameof(typeof(mapper.ds)))
     println(io, rpad(" Ttr: ", ps), mapper.Ttr)
     println(io, rpad(" Δt: ", ps), mapper.Δt)
     println(io, rpad(" T: ", ps), mapper.total)
     println(io, rpad(" group via: ", ps), nameof(typeof(mapper.group_config)))
+    println(io, rpad(" featurizer: ", ps), nameof(mapper.featurizer))
     return
 end
 
@@ -155,7 +155,7 @@ function extract_features_single(mapper, ics; show_progress = true, N = 1000)
 end
 
 # TODO: We need an alternative to deep copying integrators that efficiently
-# initialzes integrators for any given kind of system. But that can be done
+# initializes integrators for any given kind of system. But that can be done
 # later in the DynamicalSystems.jl 3.0 rework.
 function extract_features_threaded(mapper, ics; show_progress = true, N = 1000)
     N = (typeof(ics) <: Function)  ? N : size(ics, 1) # number of actual ICs

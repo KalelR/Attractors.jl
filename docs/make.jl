@@ -2,11 +2,9 @@ cd(@__DIR__)
 using Attractors
 using Attractors.DynamicalSystemsBase
 using Attractors.StateSpaceSets
-using PredefinedDynamicalSystems
 
 pages = [
     "index.md",
-    "dynsysref.md",
     "attractors.md",
     "basins.md",
     "continuation.md",
@@ -14,7 +12,6 @@ pages = [
     "examples.md",
     "references.md",
 ]
-
 
 import Downloads
 Downloads.download(
@@ -31,5 +28,5 @@ bib = CitationBibliography(
 )
 
 build_docs_with_style(pages, Attractors, DynamicalSystemsBase, StateSpaceSets;
-    expandfirst = ["index.md"], bib,
+    expandfirst = ["index.md"], bib, warnonly = [:doctest, :missing_docs, :cross_references],
 )

@@ -14,6 +14,14 @@ basins_of_attraction
 statespace_sampler
 ```
 
+## Convergence times
+
+```@docs
+convergence_and_basins_fractions
+convergence_and_basins_of_attraction
+convergence_time
+```
+
 ## Final state sensitivity / fractal boundaries
 Several functions are provided related with analyzing the fractality of the boundaries of the basins of attraction:
 
@@ -21,12 +29,23 @@ Several functions are provided related with analyzing the fractality of the boun
 - [`basin_entropy`](@ref)
 - [`basins_fractal_test`](@ref)
 - [`uncertainty_exponent`](@ref)
+- [`test_wada_merge`](@ref)
 
 ```@docs
 basins_fractal_dimension
 basin_entropy
 basins_fractal_test
 uncertainty_exponent
+test_wada_merge
+```
+
+## Edge tracking and edge states
+The edge tracking algorithm allows to locate and construct so-called edge states (also referred to as *Melancholia states*) embedded in the basin boundary separating different basins of attraction. These could be saddle points, unstable periodic orbits or chaotic saddles. The general idea is that these sets can be found because they act as attractors when restricting to the basin boundary.
+
+```@docs
+edgetracking
+EdgeTrackingResults
+bisect_to_edge
 ```
 
 ## Tipping points
@@ -36,8 +55,8 @@ This page discusses functionality related with tipping points in dynamical syste
 tipping_probabilities
 ```
 
-## Mimimal Fatal Shock
-The algorithm to find minimal perturbation for arbitrary initial condition `u0` which will kick the system into different from the current basin. 
+## Minimal Fatal Shock
+The algorithm to find minimal perturbation for arbitrary initial condition `u0` which will kick the system into different from the current basin.
 ```@docs
 minimal_fatal_shock
 MFSBlackBoxOptim

@@ -7,6 +7,9 @@ export AttractorMapper,
     AttractorsViaFeaturizing,
     ClusteringConfig,
     basins_fractions,
+    convergence_and_basins_of_attraction,
+    convergence_and_basins_fractions,
+    convergence_time,
     basins_of_attraction,
     automatic_Δt_basins,
     extract_attractors,
@@ -44,9 +47,8 @@ abstract type AttractorMapper end
 # Generic pretty printing
 function generic_mapper_print(io, mapper)
     ps = 14
-    text = "$(nameof(typeof(mapper)))"
-    println(io, text)
-    println(io, rpad(" rule f: ", ps), DynamicalSystemsBase.rulestring(mapper))
+    println(io, "$(nameof(typeof(mapper)))")
+    println(io, rpad(" system: ", ps), nameof(typeof(mapper.ds)))
     return ps
 end
 Base.show(io::IO, mapper::AttractorMapper) = generic_mapper_print(io, mapper)
@@ -63,7 +65,7 @@ Base.show(io::IO, mapper::AttractorMapper) = generic_mapper_print(io, mapper)
     )
 
 Approximate the state space fractions `fs` of the basins of attraction of a dynamical
-stystem by mapping initial conditions to attractors using `mapper`
+system by mapping initial conditions to attractors using `mapper`
 (which contains a reference to a [`DynamicalSystem`](@ref)).
 The fractions are simply the ratios of how many initial conditions ended up
 at each attractor.
@@ -82,15 +84,17 @@ a dictionary whose keys are the labels given to each attractor
 values are the respective basins fractions. The label `-1` is given to any initial condition
 where `mapper` could not match to an attractor (this depends on the `mapper` type).
 
-If `ics` is a `StateSpaceSet` the function will also return `labels`, which is
+If `ics` is a `StateSpaceSet` the function will also return `labels`, which is a
 _vector_, of equal length to `ics`, that contains the label each initial
 condition was mapped to.
 
 See [`AttractorMapper`](@ref) for all possible `mapper` types, and use
 [`extract_attractors`](@ref) (after calling `basins_fractions`) to extract
 the stored attractors from the `mapper`.
+See also [`convergence_and_basins_fractions`](@ref).
 
 ## Keyword arguments
+
 * `N = 1000`: Number of random initial conditions to generate in case `ics` is a function.
 * `show_progress = true`: Display a progress bar of the process.
 """
@@ -138,7 +142,22 @@ For `AttractorsViaFeaturizing`, the attractors are only stored if
 the mapper was called with pre-defined initial conditions rather than
 a sampler (function returning initial conditions).
 """
-extract_attractors(::AttractorMapper) = error("not imlemented")
+extract_attractors(::AttractorMapper) = error("not implemented")
+
+
+"""
+    convergence_time(mapper::AttractorMapper) → t
+
+Return the approximate time the `mapper` took to converge to an attractor.
+This function should be called just right after `mapper(u0)` was called with
+`u0` the initial condition of interest. Hence it is only valid with `AttractorMapper`
+subtypes that support this syntax.
+
+Obtaining the convergence time is computationally free,
+so that [`convergence_and_basins_fractions`](@ref) can always
+be used instead of [`basins_fractions`](@ref).
+"""
+function convergence_time end
 
 #########################################################################################
 # Generic basins of attraction method structure definition
@@ -146,23 +165,26 @@ extract_attractors(::AttractorMapper) = error("not imlemented")
 # It works for all mappers that define a `basins_fractions` method.
 """
     basins_of_attraction(mapper::AttractorMapper, grid::Tuple) → basins, attractors
+
 Compute the full basins of attraction as identified by the given `mapper`,
-which includes a reference to a [`GeneralizedDynamicalSystem`](@ref) and return them
+which includes a reference to a [`DynamicalSystem`](@ref) and return them
 along with (perhaps approximated) found attractors.
 
 `grid` is a tuple of ranges defining the grid of initial conditions that partition
 the state space into boxes with size the step size of each range.
 For example, `grid = (xg, yg)` where `xg = yg = range(-5, 5; length = 100)`.
 The grid has to be the same dimensionality as the state space expected by the
-integrator/system used in `mapper`. E.g., a [`projected_integrator`](@ref)
+integrator/system used in `mapper`. E.g., a [`ProjectedDynamicalSystem`](@ref)
 could be used for lower dimensional projections, etc. A special case here is
-a [`poincaremap`](@ref) with `plane` being `Tuple{Int, <: Real}`. In this special
+a [`PoincareMap`](@ref) with `plane` being `Tuple{Int, <: Real}`. In this special
 scenario the grid can be one dimension smaller than the state space, in which case
 the partitioning happens directly on the hyperplane the Poincaré map operates on.
 
 `basins_of_attraction` function is a convenience 5-lines-of-code wrapper which uses the
-`labels` returned by [`basins_fractions`](@ref) and simply assings them to a full array
+`labels` returned by [`basins_fractions`](@ref) and simply assigns them to a full array
 corresponding to the state space partitioning indicated by `grid`.
+
+See also [`convergence_and_basins_of_attraction`](@ref).
 """
 function basins_of_attraction(mapper::AttractorMapper, grid::Tuple; kwargs...)
     basins = zeros(Int32, map(length, grid))
@@ -187,6 +209,5 @@ end
 # Includes
 #########################################################################################
 include("attractor_mapping_proximity.jl")
-include("attractor_mapping_recurrences.jl")
-include("attractor_mapping_featurizing.jl")
-include("grouping/integrate_and_regroup.jl")
+include("recurrences/attractor_mapping_recurrences.jl")
+include("grouping/attractor_mapping_featurizing.jl")

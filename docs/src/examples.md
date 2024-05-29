@@ -3,6 +3,7 @@
 Note that the examples utilize some convenience plotting functions offered by Attractors.jl which come into scope when using `Makie` (or any of its backends such as `CairoMakie`), see the [visualization utilities](@ref) for more.
 
 ## Newton's fractal (basins of 2D map)
+
 ```@example MAIN
 using Attractors
 function newton_map(z, p, n)
@@ -16,11 +17,12 @@ newton_df(x, p)= p*x^(p-1)
 
 ds = DiscreteDynamicalSystem(newton_map, [0.1, 0.2], [3.0])
 xg = yg = range(-1.5, 1.5; length = 400)
+grid = (xg, yg)
 # Use non-sparse for using `basins_of_attraction`
-mapper = AttractorsViaRecurrences(ds, (xg, yg);
-    sparse = false, mx_chk_lost = 1000
+mapper_newton = AttractorsViaRecurrences(ds, grid;
+    sparse = false, consecutive_lost_steps = 1000
 )
-basins, attractors = basins_of_attraction(mapper; show_progress = false)
+basins, attractors = basins_of_attraction(mapper_newton; show_progress = false)
 basins
 ```
 ```@example MAIN
@@ -31,8 +33,6 @@ Now let's plot this as a heatmap, and on top of the heatmap, let's scatter plot 
 
 ```@example MAIN
 using CairoMakie
-xg = yg = range(-1.5, 1.5; length = 400)
-grid = (xg, yg)
 fig = heatmap_basins_attractors(grid, basins, attractors)
 ```
 
@@ -40,33 +40,42 @@ Instead of computing the full basins, we could get only the fractions of the bas
 In such cases it is also typically more useful to define a sampler that generates initial conditions on the fly instead of pre-defining some initial conditions (as is done in [`basins_of_attraction`](@ref). This is simple to do:
 
 ```@example MAIN
-
-grid = (xg, yg)
-mapper = AttractorsViaRecurrences(ds, grid;
-    sparse = false, mx_chk_lost = 1000
-)
-
 sampler, = statespace_sampler(grid)
 
-basins = basins_fractions(mapper, sampler)
+basins = basins_fractions(mapper_newton, sampler)
 ```
 
 in this case, to also get the attractors we simply extract them from the underlying storage of the mapper:
 ```@example MAIN
-attractors = extract_attractors(mapper)
+attractors = extract_attractors(mapper_newton)
+```
+
+## Shading basins according to convergence time
+
+Continuing from above, we can utilize the [`convergence_and_basins_of_attraction`](@ref) function, and the [`shaded_basins_heatmap`](@ref) plotting utility function, to shade the basins of attraction based on the convergence time, with lighter colors indicating faster convergence to the attractor.
+
+```@example MAIN
+mapper_newton = AttractorsViaRecurrences(ds, grid;
+    sparse = false, consecutive_lost_steps = 1000
+)
+
+basins, attractors, iterations = convergence_and_basins_of_attraction(
+    mapper_newton, grid; show_progress = false
+)
+
+shaded_basins_heatmap(grid, basins, attractors, iterations)
 ```
 
 
 ## Minimal Fatal Shock
-Finding Minimal Fatal Shock for some point `u0` on example of Newton's fractal attractors
+
+Here we find the Minimal Fatal Shock (MFS, see [`minimal_fatal_shock`](@ref)) for the attractors (i.e., fixed points) of Newton's fractal
 ```@example MAIN
-attractors = extract_attractors(mapper)
 shocks = Dict()
 algo_bb = Attractors.MFSBlackBoxOptim()
 for atr in values(attractors)
-    u0 = vec(atr)[1]
-    shocks[u0] = minimal_fatal_shock(mapper, u0, (-1.5,1.5), algo_bb)
-
+    u0 = atr[1]
+    shocks[u0] = minimal_fatal_shock(mapper_newton, u0, (-1.5,1.5), algo_bb)
 end
 shocks
 ```
@@ -74,7 +83,7 @@ To visualize results we can make use of previously defined heatmap
 ```@example MAIN
 ax =  content(fig[1,1])
 for (atr, shock) in shocks
-    lines!(ax, [atr[1], atr[1] + shock]; color = :orange)
+    lines!(ax, [atr, atr + shock]; color = :orange, linewidth = 3)
 end
 fig
 ```
@@ -254,9 +263,9 @@ plane = (3, 0.0)
 pmap = PoincareMap(ds, plane)
 ```
 
-We define the same grid as before, but now only we only use the x-y coordinates. This is because we can utilize the special `reinit!` method of the [`PoincareMap`](@ref), that allows us to initialize a new state directly on the hyperplane (and then the remaining variable of the dynamical system takes its value from the hyperplane itself).
+We define the same grid as before, but now only we only use the x-y coordinates. This is because we can utilize the special `reinit!` method of the `PoincareMap`, that allows us to initialize a new state directly on the hyperplane (and then the remaining variable of the dynamical system takes its value from the hyperplane itself).
 ```@example MAIN
-xg = yg = range(-6.0, 6.0; length = 251)
+xg = yg = range(-6.0, 6.0; length = 250)
 grid = (xg, yg)
 mapper = AttractorsViaRecurrences(pmap, grid; sparse = false)
 ```
@@ -308,8 +317,8 @@ for pow in (1, 2)
     xg = yg = range(0, 18.0^(1/pow); length = 200).^pow
     mapper = AttractorsViaRecurrences(ds, (xg, yg);
         Dt = 0.1, sparse = true,
-        mx_chk_fnd_att = 10, mx_chk_loc_att = 10,
-        mx_chk_safety = 1000,
+        consecutive_recurrences = 10, attractor_locate_steps = 10,
+        maximum_iterations = 1000,
     )
 
     # Find attractor and its fraction (fraction is always 1 here)
@@ -323,10 +332,12 @@ axislegend(ax)
 
 fig
 ```
+
 ## Subdivision Based Grid for `AttractorsViaRecurrences`
+
 To achieve even better results for this kind of problematic systems than with previuosly introduced `Irregular Grids`  we provide a functionality to construct `Subdivision Based Grids` in which
 one can obtain more coarse or dense structure not only along some axis but for a specific regions where the state space flow has
-significantly different speed. [`subdivided_based_grid`](@ref) enables automatic evaluation of velocity vectors for regions of originally user specified
+significantly different speed. [`subdivision_based_grid`](@ref) enables automatic evaluation of velocity vectors for regions of originally user specified
 grid to further treat those areas as having more dense or coarse structure than others.
 
 ```@example MAIN
@@ -355,7 +366,7 @@ xg = yg = range(0, 18, length = 30)
 grid = subdivision_based_grid(ds, (xg, yg))
 grid.lvl_array
 ```
-The constructed array corresponds to levels of dicretization for specific regions of the grid as a powers of 2,
+The constructed array corresponds to levels of discretization for specific regions of the grid as a powers of 2,
 meaning that if area index is assigned to be `3`, for example, the algorithm will treat the region as one being
 `2^3 = 8` times more dense than originally user provided grid `(xg, yg)`.
 
@@ -367,8 +378,8 @@ ax = Axis(fig[1,1])
 # passing SubdivisionBasedGrid into mapper
 mapper = AttractorsViaRecurrences(ds, grid;
         Dt = 0.1, sparse = true,
-        mx_chk_fnd_att = 10, mx_chk_loc_att = 10,
-        mx_chk_safety = 1000,
+        consecutive_recurrences = 10, attractor_locate_steps = 10,
+        maximum_iterations = 1000,
     )
 
 # Find attractor and its fraction (fraction is always 1 here)
@@ -382,8 +393,8 @@ scatter!(ax, vec(attractors_SBD[1]); label = "SubdivisionBasedGrid")
 xg = yg = range(0, 18, length = 30)
 mapper = AttractorsViaRecurrences(ds, (xg, yg);
         Dt = 0.1, sparse = true,
-        mx_chk_fnd_att = 10, mx_chk_loc_att = 10,
-        mx_chk_safety = 1000,
+        consecutive_recurrences = 10, attractor_locate_steps = 10,
+        maximum_iterations = 1000,
     )
 
 sampler, _ = statespace_sampler(HRectangle(zeros(2), fill(18.0, 2)), 42)
@@ -480,8 +491,8 @@ using Random: Xoshiro
 samples_per_parameter = 1000
 total_parameter_values = 101
 diffeq = (alg = Vern9(), reltol = 1e-9, abstol = 1e-9, maxiters = Inf)
-recurrences_kwargs = (; Δt= 1.0, mx_chk_fnd_att=9, diffeq);
-# initialize dynamical syste and sampler
+recurrences_kwargs = (; Δt= 1.0, consecutive_recurrences=9, diffeq);
+# initialize dynamical system and sampler
 ds = PredefinedDynamicalSystems.multispecies_competition() # 8-dimensional
 ds = CoupledODEs(ODEProblem(ds), diffeq)
 # define grid in state space
@@ -541,7 +552,7 @@ plot_basins_curves(aggregated_fractions, prange;
 
 ## Trivial featurizing and grouping for basins fractions
 
-This is a rather trivial example showcasing the usage of [`AttractorsViaFeaturizing`](@ref). Let us use once again the magnetic pendulum example. For it, we have a really good idea of what features will uniquely describe each attractor: the last points of a trajectory (which should be very close to the magnetic the trajectory converged to). To provide this information to the [`AttractorsviaFeaturizing`](@ref) we just create a julia function that returns this last point
+This is a rather trivial example showcasing the usage of [`AttractorsViaFeaturizing`](@ref). Let us use once again the magnetic pendulum example. For it, we have a really good idea of what features will uniquely describe each attractor: the last points of a trajectory (which should be very close to the magnetic the trajectory converged to). To provide this information to the [`AttractorsViaFeaturizing`](@ref) we just create a julia function that returns this last point
 
 ```@example MAIN
 using Attractors
@@ -650,3 +661,317 @@ gconfig = GroupViaClustering(;
 ```
 
 You can then pass the `histogram_featurizer` and `gconfig` to an [`AttractorsViaFeaturizing`](@ref) and use the rest of the library as usual.
+
+
+## Animation illustrating `AttractorsViaRecurrences`
+
+The following Julia script inputs a 2D continuous time dynamical system and animates its time evolution while illustrating how [`AttractorsViaRecurrences`](@ref) works.
+
+```julia
+using Attractors, CairoMakie
+using PredefinedDynamicalSystems
+using OrdinaryDiffEq
+
+# Set up dynamical system: bi-stable predator pray
+function predator_prey_rule(u, p, t)
+    r, c, μ, ν, α, β, χ, δ = p
+    N, P = u
+    common = α*N*P/(β+N)
+    dN = r*N*(1 - (c/r)*N)*((N-μ)/(N+ν)) - common
+    dP = χ*common - δ*P
+    return SVector(dN, dP)
+end
+
+u0 = SVector(8.0, 0.01)
+r = 2.0
+# r, c, μ, ν, α, β, χ, δ = p
+p = [r, 0.19, 0.03, 0.003, 800, 1.5, 0.004, 2.2]
+
+diffeq = (alg = Rodas5P(), abstol = 1e-9, rtol = 1e-9)
+ds = CoupledODEs(predator_prey_rule, u0, p; diffeq)
+
+u0s = [ # animation will start from these initial conditions
+    [10, 0.012],
+    [15, 0.02],
+    [12, 0.01],
+    [13, 0.015],
+    [5, 0.02],
+]
+
+density = 31
+xg = range(-0.1, 20; length = density)
+yg = range(-0.001, 0.03; length = density)
+Δt = 0.1
+grid = (xg, yg)
+mapper = AttractorsViaRecurrences(ds, grid;
+    Δt, consecutive_attractor_steps = 10, consecutive_basin_steps = 10, sparse = false,
+    consecutive_recurrences = 100, attractor_locate_steps = 100,
+)
+
+##########################################################################
+
+function animate_attractors_via_recurrences(
+        mapper::AttractorsViaRecurrences, u0s;
+        colors = ["#FFFFFF", "#7143E0","#0A9A84","#AF9327","#791457", "#6C768C", "#4287f5",],
+        filename = "recurrence_algorithm.mp4",
+    )
+
+    grid_nfo = mapper.bsn_nfo.grid_nfo
+
+    fig = Figure()
+    ax = Axis(fig[1,1])
+
+    # Populate the grid with poly! rectangle plots. However! The rectangles
+    # correspond to the same "cells" of the grid. Additionally, all
+    # rectangles are colored with an _observable_, that can be accessed
+    # later using the `basin_cell_index` function. The observable
+    # holds the face color of the rectangle!
+
+    # Only 6 colors; need 3 for base, and extra 2 for each attractor.
+    # will choose initial conditions that are only in the first 2 attractors
+    COLORS = map(c -> Makie.RGBA(Makie.RGB(to_color(c)), 0.9), colors)
+
+    function initialize_cells2!(ax, grid; kwargs...)
+        # These are all possible outputs of the `basin_cell_index` function
+        idxs = all_cartesian_idxs(grid)
+        color_obs = Matrix{Any}(undef, size(idxs)...)
+        # We now need to reverse-engineer
+        for i in idxs
+            rect = cell_index_to_rect(i, grid)
+            color = Observable(COLORS[1])
+            color_obs[i] = color
+            poly!(ax, rect; color = color, strokecolor = :black, strokewidth = 0.5)
+        end
+        # Set the axis limits better
+        mini, maxi = Attractors.minmax_grid_extent(grid)
+        xlims!(ax, mini[1], maxi[1])
+        ylims!(ax, mini[2], maxi[2])
+        return color_obs
+    end
+
+    all_cartesian_idxs(grid::Attractors.RegularGrid) = CartesianIndices(length.(grid.grid))
+
+    # Given a cartesian index, the output of `basin_cell_index`, create
+    # a `Rect` object that corresponds to that grid cell!
+    function cell_index_to_rect(n::CartesianIndex, grid::Attractors.RegularGrid)
+        x = grid.grid[1][n[1]]
+        y = grid.grid[2][n[2]]
+        dx = grid.grid_steps[1]
+        dy = grid.grid_steps[2]
+        rect = Rect(x - dx/2, y - dy/2, dx, dy)
+        return rect
+    end
+
+    color_obs = initialize_cells2!(ax, grid_nfo)
+
+    # plot the trajectory
+    state2marker = Dict(
+        :att_search => :circle,
+        :att_found => :dtriangle,
+        :att_hit => :rect,
+        :lost => :star5,
+        :bas_hit => :xcross,
+    )
+
+    # This function gives correct color to search, recurrence, and
+    # the individual attractors. Ignores the lost state.
+    function update_current_cell_color!(cellcolor, bsn_nfo)
+        # We only alter the cell color at specific situations
+        state = bsn_nfo.state
+        if state == :att_search
+            if cellcolor[] == COLORS[1] # empty
+                cellcolor[] = COLORS[2] # visited
+            elseif cellcolor[] == COLORS[2] # visited
+                cellcolor[] = COLORS[3] # recurrence
+            end
+        elseif state == :att_found
+            attidx = (bsn_nfo.current_att_label ÷ 2)
+            attlabel = (attidx - 1)*2 + 1
+            cellcolor[] = COLORS[3+attlabel]
+        end
+        return
+    end
+
+    # Iteration and labelling
+    ds = mapper.ds
+    bsn_nfo = mapper.bsn_nfo
+    u0 = current_state(ds)
+
+    traj = Observable(SVector{2, Float64}[u0])
+    point = Observable([u0])
+
+    marker = Observable(:circle)
+    lines!(ax, traj; color = :black, linewidth = 1)
+    scatter!(ax, point; color = (:black, 0.5), markersize = 20, marker, strokewidth = 1.0, strokecolor = :black)
+
+    stateobs = Observable(:att_search)
+    consecutiveobs = Observable(0)
+    labeltext = @lift("state: $($(stateobs))\nconsecutive: $($(consecutiveobs))")
+
+    Label(fig[0, 1][1,1], labeltext; justification = :left, halign = :left, tellwidth = false)
+    # add text  with options
+    kwargstext = prod("$(p[1])=$(p[2])\n" for p in mapper.kwargs)
+    Label(fig[0, 1][1, 2], kwargstext; justification = :right, halign = :right, tellwidth = false)
+
+
+    # make legend
+    entries = [PolyElement(color = c) for c in COLORS[2:end]]
+    labels = ["visited", "recurrence", "attr. 1", "basin 1", "attr. 2", "basin 2"]
+
+    Legend(fig[:, 2][1, 1], entries, labels)
+
+
+    # %% loop
+    # The following code is similar to the source code of `recurrences_map_to_label!`
+
+    cell_label = 0
+    record(fig, filename) do io
+        for u0 in u0s
+            reinit!(ds, copy(u0))
+            traj[] = [copy(u0)]
+
+            while cell_label == 0
+                step!(ds, bsn_nfo.Δt)
+                u = current_state(ds)
+
+                # update FSM
+                n = Attractors.basin_cell_index(u, bsn_nfo.grid_nfo)
+                cell_label = Attractors.finite_state_machine!(bsn_nfo, n, u; mapper.kwargs...)
+
+                state = bsn_nfo.state
+
+                if cell_label ≠ 0 # FSM terminated; we assume no lost/divergence in the system
+                    stateobs[] = :terminated
+
+                    # color-code initial condition if we converged to attractor
+                    # or to basin (even or odd cell label)
+                    u0n = Attractors.basin_cell_index(u0, bsn_nfo.grid_nfo)
+
+                    basidx = (cell_label - 1)
+                    color_obs[u0n][] = COLORS[3+basidx]
+
+                    # Clean up: all "visited" cells become white again
+                    visited_idxs = findall(v -> (v[] == COLORS[2] || v[] == COLORS[3]), color_obs)
+                    for n in visited_idxs
+                        color_obs[n][] = COLORS[1] # empty
+                    end
+                    # clean up trajectory line
+                    traj[] = []
+
+                    for i in 1:15; recordframe!(io); end
+                    cell_label = 0
+                    break
+                end
+
+                # update visuals:
+                point[] = [u]
+                push!(traj[], u)
+                notify(traj)
+                marker[] = state2marker[state]
+                stateobs[] = state
+                consecutiveobs[] = bsn_nfo.consecutive_match
+
+                update_current_cell_color!(color_obs[n], bsn_nfo)
+
+                recordframe!(io)
+            end
+        end
+    end
+end
+
+animate_attractors_via_recurrences(mapper, u0s)
+```
+
+```@raw html
+<video width="75%" height="auto" controls autoplay loop>
+<source src="https://raw.githubusercontent.com/JuliaDynamics/JuliaDynamics/master/videos/attractors/recurrence_algorithm.mp4?raw=true" type="video/mp4">
+</video>
+```
+
+## Edge tracking
+
+To showcase how to run the [`edgetracking`](@ref) algorithm, let us use it to find the
+saddle point of the bistable FitzHugh-Nagumo (FHN) model, a two-dimensional ODE system
+originally conceived to represent a spiking neuron.
+We define the system in the following form:
+
+```@example MAIN
+using OrdinaryDiffEq: Vern9
+
+function fitzhugh_nagumo(u,p,t)
+    x, y = u
+    eps, beta = p
+    dx = (x - x^3 - y)/eps
+    dy = -beta*y + x
+    return SVector{2}([dx, dy])
+end
+
+params = [0.1, 3.0]
+ds = CoupledODEs(fitzhugh_nagumo, ones(2), params, diffeq=(;alg = Vern9(), reltol=1e-11))
+```
+
+Now, we can use Attractors.jl to compute the fixed points and basins of attraction of the
+FHN model.
+
+```@example MAIN
+xg = yg = range(-1.5, 1.5; length = 201)
+grid = (xg, yg)
+mapper = AttractorsViaRecurrences(ds, grid; sparse=false)
+basins, attractors = basins_of_attraction(mapper)
+attractors
+```
+
+The `basins_of_attraction` function found three fixed points: the two stable nodes of the
+system (labelled A and B) and the saddle point at the origin. The saddle is an unstable
+equilibrium and typically will not be found by `basins_of_attraction`. Coincidentally here we initialized an initial condition exactly on the saddle, and hence it was found.
+We can always find saddles with the [`edgetracking`](@ref) function. For illustration, let us initialize the algorithm from
+two initial conditions `init1` and `init2` (which must belong to different basins
+of attraction, see figure below).
+
+```@example MAIN
+attractors_AB = Dict(1 => attractors[1], 2 => attractors[2])
+init1, init2 = [-1.0, -1.0], [-1.0, 0.2]
+```
+
+Now, we run the edge tracking algorithm:
+
+```@example MAIN
+et = edgetracking(ds, attractors_AB; u1=init1, u2=init2,
+    bisect_thresh = 1e-3, diverge_thresh = 2e-3, Δt = 1e-5, abstol = 1e-3
+)
+
+et.edge[end]
+```
+
+The algorithm has converged to the origin (up to the specified accuracy) where the saddle
+is located. The figure below shows how the algorithm has iteratively tracked along the basin
+boundary from the two initial conditions (red points) to the saddle (green square). Points
+of the edge track (orange) at which a re-bisection occured are marked with a white border.
+The figure also depicts two trajectories (blue) intialized on either side of the basin
+boundary at the first bisection point. We see that these trajectories follow the basin
+boundary for a while but then relax to either attractor before reaching the saddle. By
+counteracting the instability of the saddle, the edge tracking algorithm instead allows to
+track the basin boundary all the way to the saddle, or edge state.
+
+```@example MAIN
+traj1 = trajectory(ds, 2, et.track1[et.bisect_idx[1]], Δt=1e-5)
+traj2 = trajectory(ds, 2, et.track2[et.bisect_idx[1]], Δt=1e-5)
+
+fig = Figure()
+ax = Axis(fig[1,1], xlabel="x", ylabel="y")
+heatmap_basins_attractors!(ax, grid, basins, attractors, add_legend=false, labels=Dict(1=>"Attractor A", 2=>"Attractor B", 3=>"Saddle"))
+lines!(ax, traj1[1][:,1], traj1[1][:,2], color=:dodgerblue, linewidth=2, label="Trajectories")
+lines!(ax, traj2[1][:,1], traj2[1][:,2], color=:dodgerblue, linewidth=2)
+lines!(ax, et.edge[:,1], et.edge[:,2], color=:orange, linestyle=:dash)
+scatter!(ax, et.edge[et.bisect_idx,1], et.edge[et.bisect_idx,2], color=:white, markersize=15, marker=:circle, zorder=10)
+scatter!(ax, et.edge[:,1], et.edge[:,2], color=:orange, markersize=11, marker=:circle, zorder=10, label="Edge track")
+scatter!(ax, [-1.0,-1.0], [-1.0, 0.2], color=:red, markersize=15, label="Initial conditions")
+xlims!(ax, -1.2, 1.1); ylims!(ax, -1.3, 0.8)
+axislegend(ax, position=:rb)
+fig
+```
+
+In this simple two-dimensional model, we could of course have found the saddle directly by
+computing the zeroes of the ODE system. However, the edge tracking algorithm allows finding
+edge states also in high-dimensional and chaotic systems where a simple computation of
+unstable equilibria becomes infeasible.

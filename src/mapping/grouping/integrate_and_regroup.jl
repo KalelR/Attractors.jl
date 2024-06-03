@@ -1,21 +1,10 @@
 """
 Re-integrate attractors, giving new T, Ttr and Δt, regroup them, and create a new `fs`
-that accounts for any changes in the attractors from this new grouping. Useful in
-eliminating duplicate attractors, which may come about from unideal simulation times (e.g.
-to elimiate long transients).
-#TODO: implementthreads
-"""
-function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded = true)
-    atts_integ = Dict(k => trajectory(mapper.ds, T, att[end]; Ttr, Δt)[1] for (k, att) in atts) #to parallelize, need functin that return trajs and features
-    ts = Ttr:Δt:Ttr+T
-    features = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
-    labels = group_features(collect(values(features)), mapper.group_config)
-    tmap = Dict(keys(features) .=> labels) # map keys from previous grouping to keys from new grouping
-    new_keys = unique(labels) 
-    fs_new, atts_new = _updated_fs_and_atts(fs, atts_integ, new_keys, tmap)
-    return atts_new, fs_new, features
-end
+that accounts for any changes in the attractors from this new grouping. 
 
+Useful in eliminating duplicate attractors, which may come about from unideal simulation
+ times (e.g. to elimiate long transients). 
+"""
 function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded = true)
     ics = Dict(k => att[end] for (k, att) in atts)
     atts_integ, ts = integrate_ics(mapper.ds, ics, T; threaded, Ttr, Δt)
@@ -27,7 +16,6 @@ function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded
     fs_new, atts_new = _updated_fs_and_atts(fs, atts_integ, new_keys, tmap)
     return atts_new, fs_new, features
 end
-
 
 """
 maintains the key order from `ics`
@@ -101,7 +89,7 @@ function integrate_and_regroup_and_rematch(fam, prange, pidx, atts_info, fs_curv
     
     for idx in eachindex(prange)
         p = prange[idx]
-        @show p
+        @info "In integrate and regroup, p = $p."
         set_parameter!(mapper.ds, pidx, p)
         atts, fs = atts_info_new[idx], fs_curves_new[idx]
         atts_new, fs_new = integrate_and_regroup(mapper, atts, fs; kwargs...)

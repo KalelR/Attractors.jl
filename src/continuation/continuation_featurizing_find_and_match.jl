@@ -59,12 +59,13 @@ distance > `threshold` do not get matched.
 Additionally, use `use_vanished = true` if you want to include as matching candidates
 attractors that have vanished during the continuation process.
 """
-struct FeaturizingFindAndMatch{A, M, R<:Real, S, E} <: AttractorsBasinsContinuation
+struct FeaturizingFindAndMatch{A, M, R<:Real, S, E, I} <: AttractorsBasinsContinuation
     mapper::A
     distance::M
     threshold::R
     seeds_from_attractor::S
     info_extraction::E
+    number_seeded_ics::I
 end
 
 "Alias for [`FeaturizingFindAndMatch`](@ref)."
@@ -73,15 +74,24 @@ const FFAM = FeaturizingFindAndMatch
 function FeaturizingFindAndMatch(
         mapper::AttractorsViaFeaturizing; distance = Centroid(),
         threshold = Inf, seeds_from_attractor = _default_seeding_process_featurizing,
-        info_extraction = identity
+        info_extraction = identity, number_seeded_ics=nothing
     )
+
+    if isnothing(number_seeded_ics)
+        number_seeded_ics = typeof(mapper.group_config) <: GroupViaClustering ?
+                            5*mapper.group_config.min_neighbors : 5
+    end
     return FeaturizingFindAndMatch(
-        mapper, distance, threshold, seeds_from_attractor, info_extraction
+        mapper, distance, threshold, seeds_from_attractor, info_extraction, number_seeded_ics
     )
 end
 
 function _default_seeding_process_featurizing(attractor::AbstractStateSpaceSet, number_seeded_ics=10; rng = MersenneTwister(1))
     return [rand(rng, vec(attractor)) for _ in 1:number_seeded_ics] #might lead to repeated ics, which is intended for the continuation
+end
+
+function _endpoint_seeding_process_featurizing(attractor::AbstractStateSpaceSet, number_seeded_ics=10; rng = MersenneTwister(1))
+    return [attractor[end]; [rand(rng, vec(attractor)) for _ in 2:number_seeded_ics]] #might lead to repeated ics, which is intended for the continuation
 end
 
 
@@ -98,7 +108,7 @@ function continuation(
         error("`ics` needs to be a Dataset.")
     end
 
-    (; mapper, distance, threshold) = fam
+    (; mapper, distance, threshold, number_seeded_ics) = fam
     reset!(mapper)
     # first parameter is run in isolation, as it has no prior to seed from
     set_parameter!(mapper.ds, pidx, prange[1])
@@ -116,20 +126,22 @@ function continuation(
     alltime_maximum_key = maximum(keys(fs))
     # Continue loop over all remaining parameters
     for p in prange[2:end]
+        @info "p = $p"
         set_parameter!(mapper.ds, pidx, p)
         reset!(mapper)
         
         # Collect ics from previous attractors to pass as additional ics to basins fractions (seeding).
         # To ensure that the clustering will identify them as clusters, we need to guarantee that there
         # are at least `min_neighbors` entries.
-        num_additional_ics = typeof(mapper.group_config) <: GroupViaClustering ? 5*mapper.group_config.min_neighbors : 5
         additional_ics = Dataset(vcat(map(att-> 
-            fam.seeds_from_attractor(att, num_additional_ics),
+            fam.seeds_from_attractor(att, number_seeded_ics),
             values(prev_attractors))...)) #dataset with ics seeded from previous attractors
         
+        # for ic in additional_ics @show ic end
+        idxs_special_additional_ics = 1:number_seeded_ics:length(additional_ics)
         # Now perform basin fractions estimation as normal, utilizing found attractors
         fs, _ = basins_fractions(mapper, ics;
-            show_progress = false, additional_ics
+            show_progress = false, additional_ics, idxs_special_additional_ics, prev_attractors
         )
         
         current_attractors = extract_attractors(mapper)

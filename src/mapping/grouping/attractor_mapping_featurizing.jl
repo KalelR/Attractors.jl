@@ -97,11 +97,15 @@ ValidICS = Union{AbstractStateSpaceSet, Function}
 # cannot map individual initial conditions to attractors
 function basins_fractions(mapper::AttractorsViaFeaturizing, og_ics::ValidICS;
     show_progress = true, N = 1000, additional_ics::Union{ValidICS, Nothing} = nothing,
+    idxs_special_additional_ics::Union{Vector{Int}, StepRange, Nothing} = nothing,
+    # prev_attractors::Union{Dict{Int, StateSpaceSet}, Nothing} = nothing
+    prev_attractors = nothing
 )
     if typeof(additional_ics) <: ValidICS
         all_ics = deepcopy(og_ics)
         append!(all_ics, additional_ics)
         ics = all_ics
+        idxs_special_additional_ics = idxs_special_additional_ics .+ length(og_ics) #idxs of these ics in the new concatenated vector ics
     else
         ics = og_ics
     end
@@ -109,7 +113,7 @@ function basins_fractions(mapper::AttractorsViaFeaturizing, og_ics::ValidICS;
     group_labels = group_features(features, mapper.group_config)
     fs = basins_fractions(group_labels) # Vanilla fractions method with Array input
     if typeof(ics) <: AbstractStateSpaceSet
-        attractors = extract_attractors(mapper, group_labels, ics)
+        attractors = extract_attractors(mapper, group_labels, ics; idxs_special_additional_ics, prev_attractors)
         overwrite_dict!(mapper.attractors, attractors)
         return fs, group_labels #note that changing this would need to change how continuation receives `fs`
     else
@@ -177,10 +181,63 @@ function extract_feature(ds::DynamicalSystem, u0::AbstractVector{<:Real}, mapper
     return mapper.featurizer(A, t)
 end
 
-function extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics)
+extract_attractors(mapper::AttractorsViaFeaturizing) = mapper.attractors
+
+function extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics; idxs_special_additional_ics=nothing, prev_attractors=nothing)
+    if isnothing(idxs_special_additional_ics)
+        return _default_extract_attractors(mapper, labels, ics)
+    else 
+        return _endpoint_extract_attractors(mapper, labels, ics; idxs_special_additional_ics, prev_attractors)
+    end
+end
+
+function _default_extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics)
     uidxs = unique(i -> labels[i], eachindex(labels))
     return Dict(labels[i] => trajectory(mapper.ds, mapper.total, ics[i];
     Ttr = mapper.Ttr, Δt = mapper.Δt)[1] for i in uidxs if i ≠ -1)
 end
 
-extract_attractors(mapper::AttractorsViaFeaturizing) = mapper.attractors
+function _endpoint_nearest_attractor(mapper, ics_atts, coflowing_atts_prev)
+    ic = ics_atts[1] #all ics here lead to the same att, so doesn't matter which to choose
+    att_current, ts = trajectory(mapper.ds, mapper.total, ic; Ttr = mapper.Ttr, Δt = mapper.Δt)
+    # dists = Dict(k=>evaluate(Euclidean(), att_current[1], att_prev[1]) for (k, att_prev) in coflowing_atts_prev) #TODO: generalize for extended attractors - make it flexible to accept features, for instance!
+    dists = Dict(k=>evaluate(Euclidean(), mapper.featurizer(att_current, ts), mapper.featurizer(att_prev, ts)) for (k, att_prev) in coflowing_atts_prev) #TODO: Decide if featurizer is better or worse!
+    min, key_nearest_att = findmin(dists)
+    nearest_att = coflowing_atts_prev[key_nearest_att]
+    return nearest_att[end]
+end
+    
+function restrict_dict_to_specified_keys(dict, specified_keys)
+    Dict(k => dict[k] for k in specified_keys if haskey(dict, k))
+end
+            
+function _endpoint_extract_attractors(mapper::AttractorsViaFeaturizing, labels, ics; idxs_special_additional_ics, prev_attractors)
+    uidxs = unique(i -> labels[i], eachindex(labels))
+    labels_end_points = labels[idxs_special_additional_ics]
+    extracted_attractors = Dict{Int, StateSpaceSet}()
+    for uidx in uidxs
+        ulabel = labels[uidx] 
+        idxs_label_end_points = findall(l->l==ulabel, labels_end_points) #idxs of endpoints that converge to label
+        if length(idxs_label_end_points) == 1 #if label comes from a unique previous attractor
+            ic = ics[idxs_special_additional_ics][idxs_label_end_points[1]]
+        elseif length(idxs_label_end_points) > 1 
+            ics_atts = ics[idxs_special_additional_ics][idxs_label_end_points]
+            coflowing_atts_prev = restrict_dict_to_specified_keys(prev_attractors, idxs_label_end_points)
+            ic = _endpoint_nearest_attractor(mapper, ics_atts, coflowing_atts_prev)
+        else 
+            ic = ics[uidx] #ic comes from pre-generated ics, not from previous attractors
+        end
+        att = trajectory(mapper.ds, mapper.total, ic; Ttr = mapper.Ttr, Δt = mapper.Δt)[1]
+        extracted_attractors[ulabel] = att
+
+        if length(idxs_label_end_points) == 1 #if label comes from a unique previous attractor
+            @info "Attractor $(att[end]) $ulabel comes from a single previous attractor $(idxs_label_end_points[1]), with ic $ic."
+        elseif length(idxs_label_end_points) > 1 
+            @info "$(length(idxs_label_end_points)) attractors ($(idxs_label_end_points)) in the previous parameter converged to the same attractor $(att[end]) ($ulabel) in the current parameter, with ic=$ic."
+            @show ics_atts
+        else 
+            @info "Attractor $(att[end]) $ulabel comes from pre-generated ics, here ic=$ic"
+        end
+    end 
+    return extracted_attractors
+end

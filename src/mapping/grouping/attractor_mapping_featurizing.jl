@@ -231,14 +231,14 @@ function _endpoint_extract_attractors(mapper::AttractorsViaFeaturizing, labels, 
         att = trajectory(mapper.ds, mapper.total, ic; Ttr = mapper.Ttr, Δt = mapper.Δt)[1]
         extracted_attractors[ulabel] = att
 
-        # if length(idxs_label_end_points) == 1 #if label comes from a unique previous attractor
-        #     @info "Attractor $(att[end]) $ulabel comes from a single previous attractor $(idxs_label_end_points[1]), with ic $ic."
-        # elseif length(idxs_label_end_points) > 1 
-        #     @info "$(length(idxs_label_end_points)) attractors ($(idxs_label_end_points)) in the previous parameter converged to the same attractor $(att[end]) ($ulabel) in the current parameter, with ic=$ic."
-        #     @show ics_atts
-        # else 
-        #     @info "Attractor $(att[end]) $ulabel comes from pre-generated ics, here ic=$ic"
-        # end
+        if length(idxs_label_end_points) == 1 #if label comes from a unique previous attractor
+            @info "Attractor $(att[end]) $ulabel comes from a single previous attractor $(idxs_label_end_points[1]), with ic $ic."
+        elseif length(idxs_label_end_points) > 1 
+            @info "$(length(idxs_label_end_points)) attractors ($(idxs_label_end_points)) in the previous parameter converged to the same attractor $(att[end]) ($ulabel) in the current parameter, with ic=$ic."
+            @show ics_atts
+        else 
+            @info "Attractor $(att[end]) $ulabel comes from pre-generated ics, here ic=$ic"
+        end
     end 
     return extracted_attractors
 end

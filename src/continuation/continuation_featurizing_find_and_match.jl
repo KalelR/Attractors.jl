@@ -126,7 +126,6 @@ function continuation(
     alltime_maximum_key = maximum(keys(fs))
     # Continue loop over all remaining parameters
     for p in prange[2:end]
-        @info "p = $p"
         set_parameter!(mapper.ds, pidx, p)
         reset!(mapper)
         

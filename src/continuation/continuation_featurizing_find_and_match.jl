@@ -160,3 +160,90 @@ end
 function reset!(mapper::AttractorsViaFeaturizing)
     empty!(mapper.attractors)
 end
+
+# Functions to perform matching by flow
+
+function keys_minimum(d)
+    vals = values(d)
+    ks = keys(d)
+    min = minimum(vals)
+    idxs_min = findall(x->x==min, collect(vals))
+    keys_min = collect(ks)[idxs_min] 
+end
+
+function _find_matching_att(featurizer, ts, att_future_int, atts_future) 
+    f1 = featurizer(att_future_int, ts) #ts isn't correct here 
+    dists_att_to_future = Dict(k=>evaluate(Euclidean(), f1, featurizer(att_future, ts)) for (k, att_future) in atts_future) 
+    # @show dists_att_to_future
+    label_nearest_atts = keys_minimum(dists_att_to_future)
+    # @show label_nearest_atts
+    if isempty(label_nearest_atts)
+        @error "WHAT"
+    elseif length(label_nearest_atts) == 1 
+        key_matching_att = label_nearest_atts[1] 
+    else #coflowing attractors 
+        @warn "WHAT"
+    end
+    return key_matching_att
+end
+
+function _find_coflowing(featurizer, ts, att_current, k_current, atts, coflowing_threshold) #coflowing if dist(att, atts) <= coflowing_th
+    f1 = featurizer(att_current, ts)
+    dist_to_atts = Dict(k=>evaluate(Euclidean(), f1, featurizer(att, ts)) for (k, att) in atts) #includes it to itself
+    idxs_coflowing = findall(x->x<=coflowing_threshold, collect(values(dist_to_atts)))
+    keys_coflowing = collect(keys(dist_to_atts))[idxs_coflowing]
+    # @info "finding coflowing, $(dist_to_atts), keys = $(keys_coflowing), current att is $(att_current[end])"
+    return keys_coflowing
+end
+
+function _key_legitimate(featurizer, ts, att_current, atts_prev)
+    f1 = featurizer(att_current, ts)
+    dist_to_prev = Dict(k=>evaluate(Euclidean(), f1, featurizer(att_prev, ts)) for (k, att_prev) in atts_prev)
+    ks_legitimate = keys_minimum(dist_to_prev)
+    # @info "finding legitimate, $(dist_to_prev), $ks_legitimate"
+    if length(ks_legitimate) == 1 
+        return ks_legitimate[1]
+    else 
+        # @warn "Two legitimates. Deal with it."
+    end 
+end
+
+function replace_by_integrated_atts(mapper, atts_all, prange, pidx; T, Ttr, Δt, coflowing_threshold=0.1)
+    all_keys = unique_keys(atts_all)
+    atts_new = deepcopy(atts_all)
+    for idx in 1:length(prange)-1
+        p_future = prange[idx+1]
+        ds_copy = deepcopy(ds)
+        set_parameter!(ds_copy, pidx, p_future)
+        atts_current = atts_new[idx]
+        atts_future =  atts_new[idx+1]
+        atts_future_integrated  = Dict(k=>trajectory(ds_copy, T, att_current[end]; Ttr, Δt)[1] for (k, att_current) in atts_current) 
+        ts = Ttr:Δt:T
+        keys_ilegitimate_all = Int64[]
+        for (k_future_int, att_future_int) in atts_future_integrated
+            if k_future_int ∈ keys_ilegitimate_all 
+                @info "skipping $k_future_int because it is already found to be ilegitimate"
+                continue
+            end
+            key_matching_att = _find_matching_att(mapper.featurizer, ts, att_future_int, atts_future)
+            
+            #before replacing, must check if att_future_int is legitimate (and doesn't come from an att that disappeared!)
+            keys_coflowing = _find_coflowing(mapper.featurizer, ts, att_future_int, k_future_int, atts_future_integrated, coflowing_threshold)
+            if length(keys_coflowing) == 1 #no coflowing, att is legitimate 
+                att_replace = att_future_int 
+            else #coflowing 
+                key_legitimate = _key_legitimate(mapper.featurizer, ts, att_future_int, atts_current)
+                if key_legitimate == k_future_int #check if this is legitimate, i.e. if it is close to a previousy existing att 
+                    att_replace = att_future_int 
+                    keys_ilegitimate = filter(x->x==key_legitimate, keys_coflowing)
+                    push!(keys_ilegitimate_all, keys_ilegitimate...)
+                else  #"$k_future_int is coflowing but not legitimate"
+                    continue
+                end
+            end
+            
+            atts_new[idx+1][key_matching_att] = att_replace 
+        end
+    end
+    return atts_new 
+end

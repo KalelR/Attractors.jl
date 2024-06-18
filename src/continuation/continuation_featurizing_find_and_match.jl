@@ -175,7 +175,7 @@ function _find_matching_att(featurizer, ts, att_future_int, atts_future)
     f1 = featurizer(att_future_int, ts) #ts isn't correct here 
     dists_att_to_future = Dict(k=>evaluate(Euclidean(), f1, featurizer(att_future, ts)) for (k, att_future) in atts_future) 
     # @show dists_att_to_future
-    label_nearest_atts = keys_minimum(dists_att_to_future)
+    label_nearest_atts = keys_minimum(dists_att_to_future)#TODO:thiswontdo-what-if-the-att-is-new??-what-if-the-same-key-is-matched-twice?
     # @show label_nearest_atts
     if isempty(label_nearest_atts)
         @error "WHAT"
@@ -208,7 +208,7 @@ function _key_legitimate(featurizer, ts, att_current, atts_prev)
     end 
 end
 
-function replace_by_integrated_atts(mapper, atts_all, prange, pidx; T, Ttr, Δt, coflowing_threshold=0.1)
+function replace_by_integrated_atts(ds, featurizer,atts_all, prange, pidx; T, Ttr, Δt, coflowing_threshold=0.1)
     all_keys = unique_keys(atts_all)
     atts_new = deepcopy(atts_all)
     for idx in 1:length(prange)-1
@@ -220,23 +220,32 @@ function replace_by_integrated_atts(mapper, atts_all, prange, pidx; T, Ttr, Δt,
         atts_future_integrated  = Dict(k=>trajectory(ds_copy, T, att_current[end]; Ttr, Δt)[1] for (k, att_current) in atts_current) 
         ts = Ttr:Δt:T
         keys_ilegitimate_all = Int64[]
+        
+        feats_current = Dict(k=>featurizer(att, ts) for (k, att) in atts_current)
+        feats_future = Dict(k=>featurizer(att, ts) for (k, att) in atts_future)
+        feats_future_int = Dict(k=>featurizer(att, ts) for (k, att) in atts_future_integrated)
+
+        @info "idx = $idx, pcurrent = $(prange[idx]), pfuture = $p_future. feats_current = $feats_current, feats_future=$feats_future, feats_future_int=$feats_future_int"
+        # @info "idx = $idx, pcurrent = $(prange[idx]), pfuture = $p_future." 
         for (k_future_int, att_future_int) in atts_future_integrated
             if k_future_int ∈ keys_ilegitimate_all 
-                @info "skipping $k_future_int because it is already found to be ilegitimate"
+                # @info "skipping $k_future_int because it is already found to be ilegitimate"
                 continue
             end
-            key_matching_att = _find_matching_att(mapper.featurizer, ts, att_future_int, atts_future)
+            key_matching_att = _find_matching_att(featurizer, ts, att_future_int, atts_future)
             
             #before replacing, must check if att_future_int is legitimate (and doesn't come from an att that disappeared!)
-            keys_coflowing = _find_coflowing(mapper.featurizer, ts, att_future_int, k_future_int, atts_future_integrated, coflowing_threshold)
+            keys_coflowing = _find_coflowing(featurizer, ts, att_future_int, k_future_int, atts_future_integrated, coflowing_threshold)
             if length(keys_coflowing) == 1 #no coflowing, att is legitimate 
                 att_replace = att_future_int 
+                @info "Att key $k_future_int flows to single attractor $key_matching_att"
             else #coflowing 
-                key_legitimate = _key_legitimate(mapper.featurizer, ts, att_future_int, atts_current)
+                key_legitimate = _key_legitimate(featurizer, ts, att_future_int, atts_current)
                 if key_legitimate == k_future_int #check if this is legitimate, i.e. if it is close to a previousy existing att 
                     att_replace = att_future_int 
                     keys_ilegitimate = filter(x->x==key_legitimate, keys_coflowing)
                     push!(keys_ilegitimate_all, keys_ilegitimate...)
+                    @info "coflowing atts $keys_coflowing, with the legitimate being $key_legitimate."
                 else  #"$k_future_int is coflowing but not legitimate"
                     continue
                 end

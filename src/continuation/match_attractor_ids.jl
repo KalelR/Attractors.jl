@@ -212,6 +212,7 @@ function match_continuation!(
         # This part normalizes so that keys increment by +1
         rmap = retract_keys_to_consecutive(fractions_curves)
         for (da, df) in zip(attractors_info, fractions_curves)
+            @info "Changing keys. Rmap = $rmap, da = $da, df = $df."
             swap_dict_keys!(da, rmap)
             swap_dict_keys!(df, rmap)
         end

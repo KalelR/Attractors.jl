@@ -9,7 +9,6 @@ function integrate_and_regroup(mapper, atts, fs; T=100, Ttr=100, Δt=1, threaded
     ics = Dict(k => att[end] for (k, att) in atts)
     atts_integ, ts = integrate_ics(mapper.ds, ics, T; threaded, Ttr, Δt)
     features = Dict(k => mapper.featurizer(att, ts) for (k, att) in atts_integ) 
-    @show features
     labels = group_features(collect(values(features)), mapper.group_config)
     tmap = Dict(keys(features) .=> labels) # map keys from previous grouping to keys from new grouping
     new_keys = unique(labels) 
@@ -97,7 +96,9 @@ function integrate_and_regroup_and_rematch(fam, prange, pidx, atts_info, fs_curv
         fs_curves_new[idx] = fs_new 
     end
 
+    @info "Running matching now."
     match_continuation!(fs_curves_new, atts_info_new; distance, threshold)
+    @info "Done. Returning!"
     return atts_info_new, fs_curves_new
 end
 

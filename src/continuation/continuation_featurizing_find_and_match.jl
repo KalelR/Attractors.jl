@@ -213,7 +213,7 @@ function replace_by_integrated_atts(ds, featurizer,atts_all, prange, pidx; T, Tt
     atts_new = deepcopy(atts_all)
     for idx in 1:length(prange)-1
         p_future = prange[idx+1]
-        ds_copy = deepcopy(ds)
+        ds_copy = deepcopy(mapper.ds)
         set_parameter!(ds_copy, pidx, p_future)
         atts_current = atts_new[idx]
         atts_future =  atts_new[idx+1]
